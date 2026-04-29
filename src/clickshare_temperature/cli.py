@@ -1,0 +1,127 @@
+from __future__ import annotations
+
+import asyncio
+from pathlib import Path
+import json
+
+import click
+
+from clickshare_temperature.types import AuthInfo
+
+from .temperature_history import TemperatureHistory
+
+@click.group()
+def cli():
+    """CLI for working with ClickShare BaseUnit temperature logs."""
+    pass
+
+@cli.command()
+@click.argument(
+    "input_file",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+)
+@click.option(
+    "--output-format", "-f",
+    type=click.Choice(["str", "json", "current"], case_sensitive=False),
+    default="str",
+    help="Output format. Can be either 'str', 'json', or 'current'. Default is 'str'." \
+    "If 'current' is specified, only the most recent reading for each sensor will be outputted.",
+)
+@click.option(
+    "--output-file", "-o",
+    type=click.Path(dir_okay=False, path_type=Path),
+    help="Path to output file. If not provided, the output will be printed to stdout.",
+)
+def parse(input_file: Path, output_format: str, output_file: Path|None):
+    """Parse a log archive and extract temperature readings."""
+    input_file = input_file.expanduser().resolve()
+    history = TemperatureHistory.from_archive_file(input_file)
+    if output_format == "json":
+        output_str = json.dumps(history.serialize(), indent=2)
+    elif output_format == "current":
+        output_str = history.serialize_current_str()
+    else:
+        output_str = history.serialize_str()
+    if output_file is not None:
+        output_file.write_text(output_str)
+    else:
+        click.echo(output_str)
+
+
+@cli.command()
+@click.argument(
+    "baseunit_ip",
+    type=str,
+)
+@click.option(
+    "--username", "-u",
+    type=str,
+    required=True,
+    prompt=True,
+    help="Username for BaseUnit API authentication.",
+)
+@click.option(
+    "--password", "-p",
+    type=str,
+    required=True,
+    prompt=True,
+    hide_input=True,
+    help="Password for BaseUnit API authentication.",
+)
+@click.option(
+    "--append-from", "-a",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    help="Path to a log archive file to append readings from. " \
+    "If provided, the readings from the downloaded logs will be appended to the readings from this file, and the combined readings will be outputted.",
+)
+@click.option(
+    "--append-from-format", "-A",
+    type=click.Choice(["str", "json"], case_sensitive=False),
+    default="str",
+    help="Format of the file provided to --append-from. Can be either 'str' or 'json'. Default is 'str'. Ignored if --append-from is not provided.",
+)
+@click.option(
+    "--output-format", "-f",
+    type=click.Choice(["str", "json", "current"], case_sensitive=False),
+    default="str",
+    help="Output format. Can be either 'str', 'json', or 'current'. Default is 'str'." \
+    "If 'current' is specified, only the most recent reading for each sensor will be outputted.",
+)
+@click.option(
+    "--output-file", "-o",
+    type=click.Path(dir_okay=False, path_type=Path),
+    help="Path to output file. If not provided, the output will be printed to stdout.",
+)
+def download(
+    baseunit_ip: str,
+    username: str,
+    password: str,
+    append_from: Path|None,
+    append_from_format: str,
+    output_format: str,
+    output_file: Path|None,
+):
+    """Download logs from the BaseUnit and extract temperature readings."""
+    auth = AuthInfo(username=username, password=password)
+    history = asyncio.run(TemperatureHistory.from_baseunit(baseunit_ip, auth))
+    if append_from is not None:
+        s = append_from.expanduser().resolve().read_text()
+        if append_from_format == "json":
+            append_history = TemperatureHistory.deserialize(json.loads(s))
+        else:
+            append_history = TemperatureHistory.deserialize_str(s)
+        history = history.combine_with(append_history)
+    if output_format == "json":
+        output_str = json.dumps(history.serialize(), indent=2)
+    elif output_format == "current":
+        output_str = history.serialize_current_str()
+    else:
+        output_str = history.serialize_str()
+    if output_file is not None:
+        output_file.write_text(output_str)
+    else:
+        click.echo(output_str)
+
+
+if __name__ == "__main__":
+    cli()

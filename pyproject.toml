@@ -1,0 +1,21 @@
+[project]
+name = "clickshare-temperature"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "nocarryr", email = "matt@nomadic-recording.com" }
+]
+requires-python = ">=3.13"
+dependencies = [
+    "aiohttp>=3.13.5",
+    "click>=8.3.3",
+    "yarl>=1.23.0",
+]
+
+[project.scripts]
+clickshare-temperature = "clickshare_temperature:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

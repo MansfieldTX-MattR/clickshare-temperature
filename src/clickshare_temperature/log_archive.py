@@ -1,0 +1,258 @@
+from __future__ import annotations
+import io
+from typing import Literal, Self, NamedTuple, Sequence, Iterator, get_args
+from pathlib import Path
+import shutil
+import tarfile
+import gzip
+import tempfile
+from dataclasses import dataclass, field
+import datetime
+from zoneinfo import ZoneInfo
+
+from .types import LogLevel, LogLevels
+
+UTC = datetime.timezone.utc
+
+# ENTRY_DT_FMT = "%Y-%m-%dT%H:%M:%S.%fZ"
+
+
+
+
+class TmpDir:
+    """Context manager for a temporary directory.
+
+    The directory and its contents will be automatically deleted when the context is exited.
+    """
+    def __init__(self) -> None:
+        self._tmpdir: tempfile.TemporaryDirectory|None = None
+        self._tmppath: Path|None = None
+
+    @property
+    def path(self) -> Path:
+        if self._tmppath is None:
+            raise ValueError("Temporary directory has not been created yet.")
+        return self._tmppath
+
+    def open(self) -> Path:
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self._tmppath = Path(self._tmpdir.name).resolve()
+        return self._tmppath
+
+    def close(self) -> None:
+        if self._tmpdir is not None:
+            self._tmpdir.cleanup()
+            self._tmpdir = None
+            self._tmppath = None
+
+    def __enter__(self) -> Path:
+        return self.open()
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+
+
+
+@dataclass
+class LogFile:
+    """A log file extracted from the log archive."""
+    filename: Path
+    index: int
+    entries: list[LogEntry] = field(default_factory=list)
+    entries_by_timestamp: dict[datetime.datetime, list[LogEntry]] = field(default_factory=dict)
+
+    def parse_entries(self):
+        """Parse the log file into a sequence of LogEntry objects."""
+        if len(self.entries):
+            raise ValueError("Log entries have already been parsed.")
+        with self.filename.open("r") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                # try:
+                entry = LogEntry.from_log_line(line)
+                self.entries.append(entry)
+                l = self.entries_by_timestamp.setdefault(entry.timestamp, [])
+                l.append(entry)
+                # assert entry.timestamp not in self.entries_by_timestamp, f"Duplicate timestamp in log file {self.filename}: {entry.timestamp}"
+                # self.entries_by_timestamp[entry.timestamp] = entry
+                # except Exception as e:
+                #     print(f"Error parsing log line: {line}\n{e}")
+
+    def __iter__(self):
+        if not self.entries:
+            self.parse_entries()
+        yield from self.values()
+
+    def __len__(self):
+        if not self.entries:
+            self.parse_entries()
+        return len(self.entries)
+
+    def keys(self) -> Iterator[datetime.datetime]:
+        if not self.entries:
+            self.parse_entries()
+        yield from sorted(self.entries_by_timestamp.keys())
+
+    def values(self) -> Iterator[LogEntry]:
+        if not self.entries:
+            self.parse_entries()
+        for timestamp in self.keys():
+            yield from self.entries_by_timestamp[timestamp]
+
+    def items(self) -> Iterator[tuple[datetime.datetime, LogEntry]]:
+        if not self.entries:
+            self.parse_entries()
+        for timestamp in self.keys():
+            for entry in self.entries_by_timestamp[timestamp]:
+                yield timestamp, entry
+
+
+
+class LogEntry(NamedTuple):
+    """A log entry parsed from a log file."""
+    timestamp: datetime.datetime
+    hostname: str
+    process: str
+    level: LogLevel|None
+    message: str
+
+    @classmethod
+    def from_log_line(cls, line: str) -> Self:
+        """Parse a log line into a LogEntry."""
+        def parse_log_level(line_after_hostname: str) -> tuple[LogLevel|None, str]:
+            if line_after_hostname.startswith("["):
+                try:
+                    level_str, message = line_after_hostname.split("] ", 1)
+                    level_str = level_str.lstrip("[").rstrip("]")
+                    if level_str in LogLevels:
+                        return level_str, message
+                except ValueError:
+                    return None, line_after_hostname
+            return None, line_after_hostname
+        # Example log line:
+        # 2024-06-01T12:34:56.123456-05:00 hostname process: [INFO] This is a log message
+        # For some entries, such as kernel events, the log level is not included:
+        # 2024-06-01T12:34:56.123456-05:00 hostname rsyslogd: [origin software="rsyslogd" swVersion="8.2102.0" x-pid="1234" x-info="https://www.rsyslog.com"] starting up
+        timestamp_str, rest = line.split(" ", 1)
+        timestamp = datetime.datetime.fromisoformat(timestamp_str)
+        hostname, rest = rest.split(" ", 1)
+        try:
+            process, rest = rest.split(":", 1)
+            process = process.strip()
+        except:
+            print(f"Error parsing log line (missing process): {timestamp_str=}, {hostname=}, {line=}")
+            raise
+        level, message = parse_log_level(rest)
+        return cls(timestamp=timestamp, hostname=hostname, process=process, level=level, message=message)
+
+    def __gt__(self, other: LogEntry|datetime.datetime) -> bool:
+        if isinstance(other, LogEntry):
+            return self.timestamp > other.timestamp
+        if isinstance(other, datetime.datetime):
+            return self.timestamp > other
+        return NotImplemented
+
+    def __lt__(self, other: LogEntry|datetime.datetime) -> bool:
+        if isinstance(other, LogEntry):
+            return self.timestamp < other.timestamp
+        if isinstance(other, datetime.datetime):
+            return self.timestamp < other
+        return NotImplemented
+
+    def __ge__(self, other: LogEntry|datetime.datetime) -> bool:
+        if isinstance(other, LogEntry):
+            return self.timestamp >= other.timestamp
+        if isinstance(other, datetime.datetime):
+            return self.timestamp >= other
+        return NotImplemented
+
+    def __le__(self, other: LogEntry|datetime.datetime) -> bool:
+        if isinstance(other, LogEntry):
+            return self.timestamp <= other.timestamp
+        if isinstance(other, datetime.datetime):
+            return self.timestamp <= other
+        return NotImplemented
+
+
+
+
+class LogArchive:
+    """Context manager for a log archive.
+
+    The log archive will be extracted to a temporary directory, which will be
+    automatically deleted when the context is exited.
+
+    The structure of the log archive is:
+
+    - log/
+      - info
+      - info.1.gz
+      - info.2.gz
+      - ...
+
+    """
+
+    log_files: list[LogFile]
+    def __init__(self) -> None:
+        # self._archive_bytes = archive_bytes
+        # self._tmpdir: TmpDir|None = None
+        # self.log_files = []
+        self.log_files = []
+
+    def parse_archive_file(self, archive_path: Path) -> None:
+        with TmpDir() as tmpdir:
+            with tarfile.open(fileobj=gzip.GzipFile(fileobj=archive_path.open("rb"))) as tar:
+                tar.extractall(path=tmpdir)
+            self._parse_log_files(tmpdir)
+
+    def parse_archive_bytes(self, archive_bytes: bytes) -> None:
+        with TmpDir() as tmpdir:
+            with tarfile.open(fileobj=gzip.GzipFile(fileobj=io.BytesIO(archive_bytes))) as tar:
+                tar.extractall(path=tmpdir)
+            self._parse_log_files(tmpdir)
+
+    def _parse_log_files(self, tmpdir: Path) -> None:
+        log_dir = tmpdir / "log"
+        for p in log_dir.glob("info*"):
+            if not p.is_file():
+                continue
+            suffixes = p.suffixes
+            if len(suffixes) > 0:
+                assert len(suffixes) == 2, f"Unexpected file in log archive: {p}"
+                assert suffixes[-1] == ".gz", f"Unexpected file in log archive: {p}"
+                index = int(suffixes[0].lstrip(".").lstrip("info"))
+                is_gzipped = True
+            else:
+                index = 0
+                is_gzipped = False
+
+            if is_gzipped:
+                with gzip.open(p, "rt") as f:
+                    log_content = f.read()
+                    log_filename = tmpdir / p.stem
+                    log_filename.write_text(log_content)
+                log_file = LogFile(filename=log_filename, index=index)
+            else:
+                log_file = LogFile(filename=p, index=index)
+            log_file.parse_entries()
+            self.log_files.append(log_file)
+        self.log_files.sort(key=lambda lf: lf.index)
+        self.log_files.reverse()  # Logs are ordered from newest to oldest, so reverse the list to have oldest first
+
+    def all_entries(self, unique: bool = True) -> Iterator[LogEntry]:
+        """Get an iterator over all log entries in the archive, ordered by timestamp."""
+        timestamps_seen = set[datetime.datetime]()
+        for log_file in self.log_files:
+            for entry in log_file.values():
+                if unique and entry.timestamp in timestamps_seen:
+                    continue
+                timestamps_seen.add(entry.timestamp)
+                yield entry
+
+    def __iter__(self):
+        return iter(self.log_files)
+
+    def __len__(self):
+        return len(self.log_files)
