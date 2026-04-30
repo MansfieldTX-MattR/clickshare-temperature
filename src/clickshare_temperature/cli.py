@@ -9,6 +9,13 @@ import click
 from clickshare_temperature.types import AuthInfo
 
 from .temperature_history import TemperatureHistory
+from .types import AioHttpRequestOptions, AioHttpSessionOptions
+
+DEFAULT_REQUEST_OPTIONS: AioHttpRequestOptions = {
+    "ssl": False,
+}
+
+DEFAULT_SESSION_OPTIONS: AioHttpSessionOptions = {}
 
 @click.group()
 def cli():
@@ -103,7 +110,12 @@ def download(
 ):
     """Download logs from the BaseUnit and extract temperature readings."""
     auth = AuthInfo(username=username, password=password)
-    history = asyncio.run(TemperatureHistory.from_baseunit(baseunit_ip, auth))
+    history = asyncio.run(TemperatureHistory.from_baseunit(
+        baseunit_ip,
+        auth_info=auth,
+        session_options=DEFAULT_SESSION_OPTIONS,
+        **DEFAULT_REQUEST_OPTIONS
+    ))
     if append_from is not None:
         s = append_from.expanduser().resolve().read_text()
         if append_from_format == "json":

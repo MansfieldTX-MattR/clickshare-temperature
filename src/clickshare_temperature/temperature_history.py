@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import NamedTuple, Literal, TypedDict
+from typing import NamedTuple, TypedDict, Unpack
 import asyncio
 import datetime
 from pathlib import Path
@@ -9,7 +9,9 @@ from aiohttp import ClientSession, BasicAuth
 
 from .baseunit_api import download_logs
 from .log_archive import LogArchive, LogEntry
-from .types import SensorType, SensorTypes, AuthInfo
+from .types import (
+    SensorType, SensorTypes, AuthInfo, AioHttpSessionOptions, AioHttpRequestOptions
+)
 
 
 
@@ -103,9 +105,22 @@ class TemperatureHistory:
         return cls(readings=readings, readings_by_timestamp=readings_by_timestamp)
 
     @classmethod
-    async def from_baseunit(cls, baseunit_ip: str, auth: AuthInfo) -> TemperatureHistory:
+    async def from_baseunit(
+        cls,
+        baseunit_ip: str,
+        auth_info: AuthInfo,
+        session: ClientSession|None = None,
+        session_options: AioHttpSessionOptions|None = None,
+        **request_options: Unpack[AioHttpRequestOptions]
+    ) -> TemperatureHistory:
         """Create a TemperatureHistory by downloading logs from the BaseUnit."""
-        archive_bytes = await download_logs(baseunit_ip, auth=auth)
+        archive_bytes = await download_logs(
+            baseunit_ip,
+            auth_info=auth_info,
+            session=session,
+            session_options=session_options,
+            **request_options
+        )
         return cls.from_archive_bytes(archive_bytes)
 
     @classmethod
