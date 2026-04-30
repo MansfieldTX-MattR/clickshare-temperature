@@ -9,6 +9,7 @@ import click
 from clickshare_temperature.types import AuthInfo
 
 from .temperature_history import TemperatureHistory
+from .log_archive import LogArchive
 from .types import AioHttpRequestOptions, AioHttpSessionOptions
 
 DEFAULT_REQUEST_OPTIONS: AioHttpRequestOptions = {
@@ -108,6 +109,13 @@ def parse(input_file: Path, output_format: OutputFormat, output_file: Path|None)
     type=click.Path(dir_okay=False, path_type=Path),
     help="Path to output file. If not provided, the output will be printed to stdout.",
 )
+@click.option(
+    "--raw-logs",
+    is_flag=True,
+    help="If set, the raw log archive will be downloaded and saved to the specified output file instead of " \
+    "parsing the logs and extracting temperature readings. The output format options will be ignored. " \
+    "If this flag is set, the output file option is required.",
+)
 def cli_download(
     baseunit_ip: str,
     username: str,
@@ -116,6 +124,7 @@ def cli_download(
     append_from_format: AppendFromFormat,
     output_format: OutputFormat,
     output_file: Path|None,
+    raw_logs: bool,
 ):
     """Download logs from the BaseUnit and extract temperature readings."""
     download(
@@ -126,6 +135,7 @@ def cli_download(
         append_from_format=append_from_format,
         output_format=output_format,
         output_file=output_file,
+        raw_logs=raw_logs,
     )
 
 
@@ -139,8 +149,36 @@ def download(
     output_file: Path|None,
     session_options: AioHttpSessionOptions|None = None,
     request_options: AioHttpRequestOptions|None = None,
+    raw_logs: bool = False,
 ):
     auth = AuthInfo(username=username, password=password)
+    if raw_logs:
+        if output_file is None:
+            raise ValueError("Output file must be specified when --raw-logs flag is set.")
+        archive = asyncio.run(LogArchive.from_baseunit(
+            baseunit_ip,
+            auth_info=auth,
+            session_options=session_options or DEFAULT_SESSION_OPTIONS,
+            **(request_options or DEFAULT_REQUEST_OPTIONS)
+        ))
+        if append_from is not None:
+            s = append_from.expanduser().resolve().read_text()
+            if append_from_format == "json":
+                append_archive = LogArchive.deserialize(json.loads(s))
+            else:
+                append_archive = LogArchive.deserialize_str(s)
+            archive = archive.combine_entries_with(append_archive)
+
+        if output_file is None:
+            raise ValueError("Output file must be specified when --raw-logs flag is set.")
+        if output_format == "current":
+            raise ValueError("Output format cannot be 'current' when --raw-logs flag is set.")
+        elif output_format == "json":
+            data = archive.serialize()
+            output_file.write_text(json.dumps(data, indent=2))
+        else:
+            output_file.write_text(archive.serialize_str())
+        return
     history = asyncio.run(TemperatureHistory.from_baseunit(
         baseunit_ip,
         auth_info=auth,
