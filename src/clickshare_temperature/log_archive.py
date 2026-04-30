@@ -137,6 +137,16 @@ class LogFile:
             self.parse_entries()
         return len(self.entries)
 
+    def __contains__(self, entry: LogEntry) -> bool:
+        if not self.entries:
+            self.parse_entries()
+        if entry.timestamp not in self.entries_by_timestamp:
+            return False
+        for e in self.entries_by_timestamp[entry.timestamp]:
+            if e == entry:
+                return True
+        return False
+
     def keys(self) -> Iterator[datetime.datetime]:
         if not self.entries:
             self.parse_entries()
@@ -364,6 +374,30 @@ class LogArchive:
                     continue
                 timestamps_seen.add(entry.timestamp)
                 yield entry
+
+    def combine_entries_with(self, other: LogArchive) -> LogArchive:
+        """Combine the log entries from this archive with another archive, returning a new LogArchive.
+
+        The combined archive will contain all unique log entries from both archives, ordered by timestamp.
+        """
+        combined_entries = list(self.all_entries(unique=True))
+        other_entries = list(other.all_entries(unique=True))
+        for entry in other_entries:
+            if self.has_entry(entry):
+                continue
+            combined_entries.append(entry)
+        combined_entries.sort(key=lambda e: e.timestamp)
+        combined_archive = LogArchive()
+        log_file = LogFile(filename=Path("info"), index=0, entries=combined_entries)
+        combined_archive.log_files.append(log_file)
+        return combined_archive
+
+    def has_entry(self, entry: LogEntry) -> bool:
+        """Check if the given log entry is present in the archive."""
+        for log_file in self.log_files:
+            if entry in log_file:
+                return True
+        return False
 
     def __iter__(self):
         return iter(self.log_files)
