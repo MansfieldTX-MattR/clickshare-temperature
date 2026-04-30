@@ -61,6 +61,47 @@ async def api_request(
             await session.close()
 
 
+async def get_baseunit_hostname(
+    baseunit_ip: str,
+    /,
+    auth_info: AuthInfo|None = None,
+    session: ClientSession|None = None,
+    session_options: AioHttpSessionOptions|None = None,
+    **request_options: Unpack[AioHttpRequestOptions],
+) -> str:
+    """Get the hostname of the BaseUnit."""
+    async with api_request(
+        baseunit_ip,
+        "configuration/system/network",
+        auth_info=auth_info,
+        session=session,
+        session_options=session_options,
+        **request_options,
+    ) as response:
+        data = await response.json()
+        return data["hostname"]
+
+
+async def get_baseunit_roomname(
+    baseunit_ip: str,
+    /,
+    auth_info: AuthInfo|None = None,
+    session: ClientSession|None = None,
+    session_options: AioHttpSessionOptions|None = None,
+    **request_options: Unpack[AioHttpRequestOptions],
+) -> str:
+    """Get the room name of the BaseUnit."""
+    async with api_request(
+        baseunit_ip,
+        "configuration/personalization",
+        auth_info=auth_info,
+        session=session,
+        session_options=session_options,
+        **request_options,
+    ) as response:
+        data = await response.json()
+        return data["meetingRoomName"]
+
 
 @overload
 async def download_logs(
