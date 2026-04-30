@@ -1,6 +1,6 @@
 from __future__ import annotations
 import io
-from typing import Literal, Self, NamedTuple, Sequence, Iterator, Unpack, get_args
+from typing import Literal, Self, NamedTuple, TypedDict, Iterator, Unpack, get_args
 from pathlib import Path
 import shutil
 import tarfile
@@ -63,6 +63,11 @@ class LogFile:
     entries: list[LogEntry] = field(default_factory=list)
     entries_by_timestamp: dict[datetime.datetime, list[LogEntry]] = field(default_factory=dict)
 
+    class SerializeTD(TypedDict):
+        filename: str
+        index: int
+        entries: list[LogEntry.SerializeTD]
+
     def parse_entries(self):
         """Parse the log file into a sequence of LogEntry objects."""
         if len(self.entries):
@@ -81,6 +86,46 @@ class LogFile:
                 # self.entries_by_timestamp[entry.timestamp] = entry
                 # except Exception as e:
                 #     print(f"Error parsing log line: {line}\n{e}")
+
+    def serialize(self) -> SerializeTD:
+        """Serialize the LogFile to a dictionary."""
+        return {
+            "filename": self.filename.name,
+            "index": self.index,
+            "entries": [entry.serialize() for entry in self.entries],
+        }
+
+    @classmethod
+    def deserialize(cls, data: SerializeTD) -> Self:
+        """Deserialize a LogFile from a dictionary."""
+        return cls(
+            filename=Path(data["filename"]),
+            index=data["index"],
+            entries=[LogEntry.deserialize(entry_data) for entry_data in data["entries"]],
+        )
+
+    def serialize_str(self) -> str:
+        """Serialize the LogFile to a string."""
+        lines = []
+        for entry in self.entries:
+            lines.append(entry.serialize_str())
+        return "\n".join(lines)
+
+    @classmethod
+    def deserialize_str(cls, log_str: str, filename: Path|None = None) -> Self:
+        """Deserialize a LogFile from a string."""
+        entries = []
+        for line in log_str.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            entry = LogEntry.from_log_line(line)
+            entries.append(entry)
+        return cls(
+            filename=filename or Path("info"),
+            index=0,
+            entries=entries,
+        )
 
     def __iter__(self):
         if not self.entries:
@@ -120,6 +165,13 @@ class LogEntry(NamedTuple):
     level: LogLevel|None
     message: str
 
+    class SerializeTD(TypedDict):
+        timestamp: str
+        hostname: str
+        process: str
+        level: LogLevel|None
+        message: str
+
     @classmethod
     def from_log_line(cls, line: str) -> Self:
         """Parse a log line into a LogEntry."""
@@ -148,6 +200,39 @@ class LogEntry(NamedTuple):
             raise
         level, message = parse_log_level(rest)
         return cls(timestamp=timestamp, hostname=hostname, process=process, level=level, message=message)
+
+    def serialize(self) -> SerializeTD:
+        """Serialize the LogEntry to a dictionary."""
+        return {
+            "timestamp": self.timestamp.isoformat(),
+            "hostname": self.hostname,
+            "process": self.process,
+            "level": self.level,
+            "message": self.message,
+        }
+
+    @classmethod
+    def deserialize(cls, data: SerializeTD) -> Self:
+        """Deserialize a LogEntry from a dictionary."""
+        timestamp = datetime.datetime.fromisoformat(data["timestamp"])
+        return cls(
+            timestamp=timestamp,
+            hostname=data["hostname"],
+            process=data["process"],
+            level=data["level"],
+            message=data["message"],
+        )
+
+    def serialize_str(self) -> str:
+        """Serialize the LogEntry to a log line string."""
+        timestamp_str = self.timestamp.isoformat()
+        level_str = f"[{self.level}]" if self.level is not None else ""
+        return f"{timestamp_str} {self.hostname} {self.process}: {level_str} {self.message}".strip()
+
+    @classmethod
+    def deserialize_str(cls, line: str) -> Self:
+        """Deserialize a LogEntry from a log line string."""
+        return cls.from_log_line(line)
 
     def __gt__(self, other: LogEntry|datetime.datetime) -> bool:
         if isinstance(other, LogEntry):
@@ -197,6 +282,10 @@ class LogArchive:
     """
 
     log_files: list[LogFile]
+
+    class SerializeTD(TypedDict):
+        log_files: list[LogFile.SerializeTD]
+
     def __init__(self) -> None:
         # self._archive_bytes = archive_bytes
         # self._tmpdir: TmpDir|None = None
@@ -281,3 +370,48 @@ class LogArchive:
 
     def __len__(self):
         return len(self.log_files)
+
+    def serialize(self) -> SerializeTD:
+        """Serialize the LogArchive to a dictionary."""
+        return {
+            "log_files": [log_file.serialize() for log_file in self.log_files]
+        }
+
+    @classmethod
+    def deserialize(cls, data: SerializeTD) -> Self:
+        """Deserialize a LogArchive from a dictionary."""
+        archive = cls()
+        archive.log_files = [
+            LogFile.deserialize(log_file_data) for log_file_data in data["log_files"]
+        ]
+        return archive
+
+    def serialize_str(self) -> str:
+        """Serialize the LogArchive to a string."""
+        lines = []
+        for entry in self.all_entries(unique=True):
+            lines.append(entry.serialize_str())
+        return "\n".join(lines)
+
+    @classmethod
+    def deserialize_str(cls, archive_str: str) -> Self:
+        """Deserialize a LogArchive from a string."""
+        archive = cls()
+        # Only one log file is supported when deserializing from a string
+        log_file = LogFile.deserialize_str(archive_str)
+        archive.log_files.append(log_file)
+        return archive
+
+    def serialize_entries(self) -> list[LogEntry.SerializeTD]:
+        """Serialize all log entries in the archive to a list of dictionaries."""
+        return [entry.serialize() for entry in self.all_entries(unique=True)]
+
+    @classmethod
+    def deserialize_entries(cls, entries_data: list[LogEntry.SerializeTD]) -> Self:
+        """Deserialize a LogArchive from a list of log entry dictionaries."""
+        archive = cls()
+        entries = [LogEntry.deserialize(entry_data) for entry_data in entries_data]
+        entries.sort(key=lambda e: e.timestamp)
+        log_file = LogFile(filename=Path("info"), index=0, entries=entries)
+        archive.log_files.append(log_file)
+        return archive
