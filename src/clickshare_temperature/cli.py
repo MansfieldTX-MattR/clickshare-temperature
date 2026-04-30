@@ -4,10 +4,12 @@ import asyncio
 from pathlib import Path
 import json
 
+from aiohttp import ClientSession
 import click
 
 from clickshare_temperature.types import AuthInfo
 
+from .baseunit_api import create_session, get_baseunit_hostname, get_baseunit_roomname
 from .temperature_history import TemperatureHistory
 from .log_archive import LogArchive
 from .types import AioHttpRequestOptions, AioHttpSessionOptions
@@ -129,7 +131,7 @@ def cli_download(
     raw_logs: bool,
 ):
     """Download logs from the BaseUnit and extract temperature readings."""
-    download(
+    asyncio.run(download(
         baseunit_ip=baseunit_ip,
         username=username,
         password=password,
@@ -138,10 +140,125 @@ def cli_download(
         output_format=output_format,
         output_file=output_file,
         raw_logs=raw_logs,
-    )
+    ))
 
 
-def download(
+@cli.command(name="download-multiple")
+@click.argument(
+    "baseunit_ip_file",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    # help="Path to a text file containing a list of BaseUnit IP addresses, one per line.",
+)
+@click.option(
+    "--username", "-u",
+    envvar="CLICKSHARE_BASEUNIT_USERNAME",
+    type=str,
+    required=True,
+    prompt=True,
+    help="Username for BaseUnit API authentication.",
+)
+@click.option(
+    "--password", "-p",
+    envvar="CLICKSHARE_BASEUNIT_PASSWORD",
+    type=str,
+    required=True,
+    prompt=True,
+    hide_input=True,
+    help="Password for BaseUnit API authentication.",
+)
+@click.option(
+    "--append-from", "-a",
+    type=click.Path(exists=True, dir_okay=True, path_type=Path),
+    required=True,
+    help="Path to a directory containing log archive files to append readings from. " \
+    "For each BaseUnit IP address, the file in this directory with the hostname of the BaseUnit will be used to append readings. " \
+    "If provided, the readings from the downloaded logs will be appended to the readings from these files, and the combined readings will be outputted.",
+)
+@click.option(
+    "--append-from-format", "-A",
+    type=click.Choice(["str", "json"], case_sensitive=False),
+    default="str",
+    help="Format of the file provided to --append-from. Can be either 'str' or 'json'. Default is 'str'. Ignored if --append-from is not provided.",
+)
+@click.option(
+    "--output-format", "-f",
+    type=click.Choice(["str", "json", "current"], case_sensitive=False),
+    default="str",
+    help="Output format. Can be either 'str', 'json', or 'current'. Default is 'str'." \
+    "If 'current' is specified, only the most recent reading for each sensor will be outputted.",
+)
+@click.option(
+    "--output-dir", "-o",
+    type=click.Path(file_okay=False, dir_okay=True, path_type=Path),
+    required=True,
+    help="Path to output directory. For each BaseUnit IP address, " \
+    "a file will be created in this directory with the hostname of the BaseUnit containing the output for that BaseUnit.",
+)
+@click.option(
+    "--raw-logs",
+    is_flag=True,
+    help="If set, the raw log archive will be downloaded and saved to the specified output file instead of " \
+    "parsing the logs and extracting temperature readings. The output format options will be ignored. " \
+    "If this flag is set, the output file option is required.",
+)
+def cli_download_multiple(
+    baseunit_ip_file: Path,
+    username: str,
+    password: str,
+    append_from: Path,
+    append_from_format: AppendFromFormat,
+    output_format: OutputFormat,
+    output_dir: Path,
+    raw_logs: bool,
+):
+    """Download logs from multiple BaseUnits and extract temperature readings."""
+    baseunit_ip_file = baseunit_ip_file.expanduser().resolve()
+    output_dir = output_dir.expanduser().resolve()
+    output_dir.mkdir(parents=True, exist_ok=True)
+    with baseunit_ip_file.open() as f:
+        baseunit_ips = [line.strip() for line in f if line.strip()]
+
+    async def run_download(baseunit_ip: str, session: ClientSession):
+        click.echo(f"Processing BaseUnit {baseunit_ip}...")
+        out_ext = "txt" if output_format in ("str", "current") else "json"
+        hostname = await get_baseunit_hostname(
+            baseunit_ip,
+            auth_info=AuthInfo(username=username, password=password),
+            session=session,
+            **DEFAULT_REQUEST_OPTIONS,
+        )
+        room_name = await get_baseunit_roomname(
+            baseunit_ip,
+            auth_info=AuthInfo(username=username, password=password),
+            session=session,
+            **DEFAULT_REQUEST_OPTIONS,
+        )
+
+        append_from_file = append_from / f"{room_name}.{hostname}.{out_ext}"
+        final_output_file = output_dir / f"{room_name}.{hostname}.{out_ext}"
+
+        await download(
+            baseunit_ip=baseunit_ip,
+            username=username,
+            password=password,
+            append_from=append_from_file,
+            append_from_format=append_from_format,
+            output_format=output_format,
+            output_file=final_output_file,
+            raw_logs=raw_logs,
+        )
+        click.echo(f"Finished processing BaseUnit {baseunit_ip} (room name: {room_name}, hostname: {hostname})")
+
+
+    async def run_downloads():
+        async with create_session(**DEFAULT_SESSION_OPTIONS) as session:
+            tasks = [run_download(baseunit_ip, session) for baseunit_ip in baseunit_ips]
+            await asyncio.gather(*tasks)
+
+    asyncio.run(run_downloads())
+
+
+async def download(
     baseunit_ip: str,
     username: str,
     password: str,
@@ -157,12 +274,12 @@ def download(
     if raw_logs:
         if output_file is None:
             raise ValueError("Output file must be specified when --raw-logs flag is set.")
-        archive = asyncio.run(LogArchive.from_baseunit(
+        archive = await LogArchive.from_baseunit(
             baseunit_ip,
             auth_info=auth,
             session_options=session_options or DEFAULT_SESSION_OPTIONS,
             **(request_options or DEFAULT_REQUEST_OPTIONS)
-        ))
+        )
         if append_from is not None:
             append_from = append_from.expanduser().resolve()
             if append_from.exists():
@@ -183,12 +300,12 @@ def download(
         else:
             output_file.write_text(archive.serialize_str())
         return
-    history = asyncio.run(TemperatureHistory.from_baseunit(
+    history = await TemperatureHistory.from_baseunit(
         baseunit_ip,
         auth_info=auth,
         session_options=session_options or DEFAULT_SESSION_OPTIONS,
         **(request_options or DEFAULT_REQUEST_OPTIONS)
-    ))
+    )
     if append_from is not None:
         append_from = append_from.expanduser().resolve()
         if append_from.exists():
