@@ -27,7 +27,7 @@ def cli():
     """CLI for working with ClickShare BaseUnit temperature logs."""
     pass
 
-@cli.command()
+@cli.command(name="parse")
 @click.argument(
     "input_file",
     type=click.Path(exists=True, dir_okay=False, path_type=Path),
@@ -44,8 +44,12 @@ def cli():
     type=click.Path(dir_okay=False, path_type=Path),
     help="Path to output file. If not provided, the output will be printed to stdout.",
 )
-def parse(input_file: Path, output_format: OutputFormat, output_file: Path|None):
+def cli_parse(input_file: Path, output_format: OutputFormat, output_file: Path|None):
     """Parse a log archive and extract temperature readings."""
+    parse(input_file, output_format, output_file)
+
+
+def parse(input_file: Path, output_format: OutputFormat, output_file: Path|None):
     input_file = input_file.expanduser().resolve()
     history = TemperatureHistory.from_archive_file(input_file)
     if output_format == "json":
@@ -60,7 +64,7 @@ def parse(input_file: Path, output_format: OutputFormat, output_file: Path|None)
         click.echo(output_str)
 
 
-@cli.command()
+@cli.command(name="download")
 @click.argument(
     "baseunit_ip",
     type=str,
@@ -104,7 +108,7 @@ def parse(input_file: Path, output_format: OutputFormat, output_file: Path|None)
     type=click.Path(dir_okay=False, path_type=Path),
     help="Path to output file. If not provided, the output will be printed to stdout.",
 )
-def download(
+def cli_download(
     baseunit_ip: str,
     username: str,
     password: str,
@@ -114,12 +118,34 @@ def download(
     output_file: Path|None,
 ):
     """Download logs from the BaseUnit and extract temperature readings."""
+    download(
+        baseunit_ip=baseunit_ip,
+        username=username,
+        password=password,
+        append_from=append_from,
+        append_from_format=append_from_format,
+        output_format=output_format,
+        output_file=output_file,
+    )
+
+
+def download(
+    baseunit_ip: str,
+    username: str,
+    password: str,
+    append_from: Path|None,
+    append_from_format: AppendFromFormat,
+    output_format: OutputFormat,
+    output_file: Path|None,
+    session_options: AioHttpSessionOptions|None = None,
+    request_options: AioHttpRequestOptions|None = None,
+):
     auth = AuthInfo(username=username, password=password)
     history = asyncio.run(TemperatureHistory.from_baseunit(
         baseunit_ip,
         auth_info=auth,
-        session_options=DEFAULT_SESSION_OPTIONS,
-        **DEFAULT_REQUEST_OPTIONS
+        session_options=session_options or DEFAULT_SESSION_OPTIONS,
+        **(request_options or DEFAULT_REQUEST_OPTIONS)
     ))
     if append_from is not None:
         s = append_from.expanduser().resolve().read_text()
