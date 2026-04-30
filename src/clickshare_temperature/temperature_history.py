@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from aiohttp import ClientSession, BasicAuth
 
 from .baseunit_api import download_logs
-from .log_archive import LogArchive, LogEntry
+from .log_archive import LogArchive, LogEntry, TmpDir
 from .types import (
     SensorType, SensorTypes, AuthInfo, AioHttpSessionOptions, AioHttpRequestOptions
 )
@@ -114,14 +114,18 @@ class TemperatureHistory:
         **request_options: Unpack[AioHttpRequestOptions]
     ) -> TemperatureHistory:
         """Create a TemperatureHistory by downloading logs from the BaseUnit."""
-        archive_bytes = await download_logs(
-            baseunit_ip,
-            auth_info=auth_info,
-            session=session,
-            session_options=session_options,
-            **request_options
-        )
-        return cls.from_archive_bytes(archive_bytes)
+        with TmpDir() as tmpdir:
+            archive_path = tmpdir / "logs.tar.gz"
+            with archive_path.open("wb") as f:
+                await download_logs(
+                    baseunit_ip,
+                    chunk_handler=f.write,
+                    auth_info=auth_info,
+                    session=session,
+                    session_options=session_options,
+                    **request_options
+                )
+            return cls.from_archive_bytes(archive_path.read_bytes())
 
     @classmethod
     def _parse_archive_entry(cls, entry: LogEntry) -> SensorReading|None:

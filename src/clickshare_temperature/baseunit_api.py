@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Unpack, overload
+from typing import Unpack, Callable, Any, overload
 
 from aiohttp import ClientSession, BasicAuth
 from yarl import URL
@@ -7,6 +7,10 @@ from yarl import URL
 from .types import (
     AuthInfo, AioHttpSessionOptions, AioHttpRequestOptions,
 )
+
+
+type ChunkHandler = Callable[[bytes], Any]
+
 
 
 def create_session(**options: Unpack[AioHttpSessionOptions]) -> ClientSession:
@@ -27,14 +31,38 @@ def get_log_download_url(baseunit_ip: str) -> URL:
     return get_baseunit_api_url(baseunit_ip) / "configuration/troubleshooting/logs"
 
 
+@overload
 async def download_logs(
     baseunit_ip: str,
     /,
+    chunk_handler: ChunkHandler,
+    chunk_size: int = ...,
+    auth_info: AuthInfo|None = ...,
+    session: ClientSession|None = ...,
+    session_options: AioHttpSessionOptions|None = ...,
+    **request_options: Unpack[AioHttpRequestOptions],
+) -> None: ...
+@overload
+async def download_logs(
+    baseunit_ip: str,
+    /,
+    chunk_handler: None = None,
+    chunk_size: int = ...,
+    auth_info: AuthInfo|None = ...,
+    session: ClientSession|None = ...,
+    session_options: AioHttpSessionOptions|None = ...,
+    **request_options: Unpack[AioHttpRequestOptions],
+) -> bytes: ...
+async def download_logs(
+    baseunit_ip: str,
+    /,
+    chunk_handler: ChunkHandler|None = None,
+    chunk_size: int = 1024,
     auth_info: AuthInfo|None = None,
     session: ClientSession|None = None,
     session_options: AioHttpSessionOptions|None = None,
     **request_options: Unpack[AioHttpRequestOptions],
-) -> bytes:
+) -> bytes|None:
     """Download logs from the BaseUnit.
 
     This function will make a GET request to the log download URL and return the content of the response as bytes.
@@ -43,15 +71,20 @@ async def download_logs(
     if auth_info is not None:
         auth = BasicAuth(auth_info.username, auth_info.password)
         request_options["auth"] = auth
+    owns_session = False
     if session is None:
         if session_options is None:
             session_options = {}
-
-        async with create_session(**session_options) as session:
-            async with session.get(url, **request_options) as response:
-                response.raise_for_status()
-                return await response.read()
-    else:
+        session = create_session(**session_options)
+        owns_session = True
+    try:
         async with session.get(url, **request_options) as response:
             response.raise_for_status()
-            return await response.read()
+            if chunk_handler is not None:
+                async for chunk in response.content.iter_chunked(chunk_size):
+                    chunk_handler(chunk)
+            else:
+                return await response.read()
+    finally:
+        if owns_session:
+            await session.close()
