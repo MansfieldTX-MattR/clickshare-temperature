@@ -1,6 +1,6 @@
 from __future__ import annotations
 import io
-from typing import Literal, Self, NamedTuple, Sequence, Iterator, get_args
+from typing import Literal, Self, NamedTuple, Sequence, Iterator, Unpack, get_args
 from pathlib import Path
 import shutil
 import tarfile
@@ -10,7 +10,9 @@ from dataclasses import dataclass, field
 import datetime
 from zoneinfo import ZoneInfo
 
-from .types import LogLevel, LogLevels
+from .baseunit_api import download_logs
+from .types import AuthInfo, LogLevel, LogLevels, AioHttpRequestOptions, AioHttpSessionOptions
+
 
 UTC = datetime.timezone.utc
 
@@ -200,6 +202,29 @@ class LogArchive:
         # self._tmpdir: TmpDir|None = None
         # self.log_files = []
         self.log_files = []
+
+    @classmethod
+    async def from_baseunit(
+        cls,
+        baseunit_ip: str,
+        auth_info: AuthInfo|None = None,
+        session_options: AioHttpSessionOptions|None = None,
+        **request_options: Unpack[AioHttpRequestOptions],
+    ) -> Self:
+        """Create a LogArchive by downloading logs from the BaseUnit."""
+        archive = cls()
+        with TmpDir() as tmpdir:
+            archive_path = tmpdir / "logs.tar.gz"
+            with archive_path.open("wb") as f:
+                await download_logs(
+                    baseunit_ip,
+                    chunk_handler=f.write,
+                    auth_info=auth_info,
+                    session_options=session_options,
+                    **request_options
+                )
+            archive.parse_archive_file(archive_path)
+        return archive
 
     def parse_archive_file(self, archive_path: Path) -> None:
         with TmpDir() as tmpdir:
