@@ -72,6 +72,7 @@ def parse(input_file: Path, output_format: OutputFormat, output_file: Path|None)
 )
 @click.option(
     "--username", "-u",
+    envvar="CLICKSHARE_BASEUNIT_USERNAME",
     type=str,
     required=True,
     prompt=True,
@@ -79,6 +80,7 @@ def parse(input_file: Path, output_format: OutputFormat, output_file: Path|None)
 )
 @click.option(
     "--password", "-p",
+    envvar="CLICKSHARE_BASEUNIT_PASSWORD",
     type=str,
     required=True,
     prompt=True,
