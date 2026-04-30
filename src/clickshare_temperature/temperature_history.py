@@ -135,10 +135,18 @@ class TemperatureHistory:
                 value = float(entry.message.split(s)[1].rstrip("°C"))
                 return SensorReading(timestamp=entry.timestamp, sensor="CPU", value=value)
         elif entry.process == "NetworkManager":
-            s = "Temperature of wlan1: "
+            s = "Temperature of wlan"
             if s in entry.message:
+                if "wlan0" in entry.message:
+                    sensor = "WLAN0"
+                elif "wlan1" in entry.message:
+                    sensor = "WLAN1"
+                else:
+                    print(f"Warning: could not determine sensor for NetworkManager entry: {entry.message}")
+                    return None
+                s = f"Temperature of {sensor.lower()}: "
                 value = float(entry.message.split(s)[1].rstrip("°C"))
-                return SensorReading(timestamp=entry.timestamp, sensor="WLAN", value=value)
+                return SensorReading(timestamp=entry.timestamp, sensor=sensor, value=value)
         return None
 
     def combine_with(self, other: TemperatureHistory) -> TemperatureHistory:

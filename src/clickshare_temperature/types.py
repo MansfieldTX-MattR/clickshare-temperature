@@ -18,8 +18,8 @@ class AuthInfo(NamedTuple):
 type LogLevel = Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
 LogLevels: tuple[LogLevel, ...] = ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL")
 
-type SensorType = Literal["CPU", "WLAN"]
-SensorTypes: tuple[SensorType, ...] = ("CPU", "WLAN")
+type SensorType = Literal["CPU", "WLAN0", "WLAN1"]
+SensorTypes: tuple[SensorType, ...] = ("CPU", "WLAN0", "WLAN1")
 
 
 type SSLOptions = SSLContext|Fingerprint|bool
