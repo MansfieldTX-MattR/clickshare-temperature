@@ -1,5 +1,5 @@
 from __future__ import annotations
-
+from typing import Literal
 import asyncio
 from pathlib import Path
 import json
@@ -16,6 +16,11 @@ DEFAULT_REQUEST_OPTIONS: AioHttpRequestOptions = {
 }
 
 DEFAULT_SESSION_OPTIONS: AioHttpSessionOptions = {}
+
+type OutputFormat = Literal["str", "json", "current"]
+type AppendFromFormat = Literal["str", "json"]
+
+
 
 @click.group()
 def cli():
@@ -39,7 +44,7 @@ def cli():
     type=click.Path(dir_okay=False, path_type=Path),
     help="Path to output file. If not provided, the output will be printed to stdout.",
 )
-def parse(input_file: Path, output_format: str, output_file: Path|None):
+def parse(input_file: Path, output_format: OutputFormat, output_file: Path|None):
     """Parse a log archive and extract temperature readings."""
     input_file = input_file.expanduser().resolve()
     history = TemperatureHistory.from_archive_file(input_file)
@@ -104,8 +109,8 @@ def download(
     username: str,
     password: str,
     append_from: Path|None,
-    append_from_format: str,
-    output_format: str,
+    append_from_format: AppendFromFormat,
+    output_format: OutputFormat,
     output_file: Path|None,
 ):
     """Download logs from the BaseUnit and extract temperature readings."""
