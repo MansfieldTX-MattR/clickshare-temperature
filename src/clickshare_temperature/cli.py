@@ -164,12 +164,14 @@ def download(
             **(request_options or DEFAULT_REQUEST_OPTIONS)
         ))
         if append_from is not None:
-            s = append_from.expanduser().resolve().read_text()
-            if append_from_format == "json":
-                append_archive = LogArchive.deserialize(json.loads(s))
-            else:
-                append_archive = LogArchive.deserialize_str(s)
-            archive = archive.combine_entries_with(append_archive)
+            append_from = append_from.expanduser().resolve()
+            if append_from.exists():
+                s = append_from.read_text()
+                if append_from_format == "json":
+                    append_archive = LogArchive.deserialize(json.loads(s))
+                else:
+                    append_archive = LogArchive.deserialize_str(s)
+                archive = archive.combine_entries_with(append_archive)
 
         if output_file is None:
             raise ValueError("Output file must be specified when --raw-logs flag is set.")
@@ -188,12 +190,14 @@ def download(
         **(request_options or DEFAULT_REQUEST_OPTIONS)
     ))
     if append_from is not None:
-        s = append_from.expanduser().resolve().read_text()
-        if append_from_format == "json":
-            append_history = TemperatureHistory.deserialize(json.loads(s))
-        else:
-            append_history = TemperatureHistory.deserialize_str(s)
-        history = history.combine_with(append_history)
+        append_from = append_from.expanduser().resolve()
+        if append_from.exists():
+            s = append_from.read_text()
+            if append_from_format == "json":
+                append_history = TemperatureHistory.deserialize(json.loads(s))
+            else:
+                append_history = TemperatureHistory.deserialize_str(s)
+            history = history.combine_with(append_history)
     if output_format == "json":
         output_str = json.dumps(history.serialize(), indent=2)
     elif output_format == "current":
