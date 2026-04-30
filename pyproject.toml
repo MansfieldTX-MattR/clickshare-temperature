@@ -3,6 +3,7 @@ name = "clickshare-temperature"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
+license = "MIT"
 authors = [
     { name = "nocarryr", email = "matt@nomadic-recording.com" }
 ]
