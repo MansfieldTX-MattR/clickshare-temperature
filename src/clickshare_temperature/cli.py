@@ -232,6 +232,7 @@ def cli_download_multiple(
 ):
     """Download logs from multiple BaseUnits and extract temperature readings."""
     baseunit_ip_file = baseunit_ip_file.expanduser().resolve()
+    output_dir_original = output_dir
     output_dir = output_dir.expanduser().resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
     with baseunit_ip_file.open() as f:
@@ -259,7 +260,7 @@ def cli_download_multiple(
             output_dir, room_name, hostname, output_format
         )
 
-        await download(
+        file_written = await download(
             baseunit_ip=baseunit_ip,
             username=username,
             password=password,
@@ -269,7 +270,12 @@ def cli_download_multiple(
             output_file=final_output_file,
             raw_logs=raw_logs,
         )
-        click.echo(f"Finished processing BaseUnit {baseunit_ip} (room name: {room_name}, hostname: {hostname}), output file: {final_output_file})")
+        msg = f"Finished processing BaseUnit {baseunit_ip} (room name: {room_name}, hostname: {hostname})."
+        if file_written:
+            msg += f" Output file: {output_dir_original / final_output_file.name}."
+        else:
+            msg += " No changes to output file."
+        click.echo(msg)
 
 
     async def run_downloads():
@@ -317,11 +323,14 @@ async def download(
         if output_format == "current":
             raise ValueError("Output format cannot be 'current' when --raw-logs flag is set.")
         elif output_format == "json":
-            data = archive.serialize()
-            output_file.write_text(json.dumps(data, indent=2))
+            output_str = json.dumps(archive.serialize(), indent=2)
         else:
-            output_file.write_text(archive.serialize_str())
-        return
+            output_str = archive.serialize_str()
+        if output_file.exists() and output_file.read_text() == output_str:
+            click.echo(f"Output file {output_file} already exists and has the same content, skipping write.")
+            return False
+        output_file.write_text(output_str)
+        return True
     history = await TemperatureHistory.from_baseunit(
         baseunit_ip,
         auth_info=auth,
@@ -344,9 +353,13 @@ async def download(
     else:
         output_str = history.serialize_str()
     if output_file is not None:
+        if output_file.exists() and output_file.read_text() == output_str:
+            click.echo(f"Output file {output_file} already exists and has the same content, skipping write.")
+            return False
         output_file.write_text(output_str)
-    else:
-        click.echo(output_str)
+        return True
+    click.echo(output_str)
+    return True
 
 
 if __name__ == "__main__":
