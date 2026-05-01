@@ -24,6 +24,37 @@ type OutputFormat = Literal["str", "json", "current"]
 type AppendFromFormat = Literal["str", "json"]
 
 
+type ClickColor = Literal[
+    "black",
+    "red",
+    "green",
+    "yellow",
+    "blue",
+    "magenta",
+    "cyan",
+    "white",
+    "bright_black",
+    "bright_red",
+    "bright_green",
+    "bright_yellow",
+    "bright_blue",
+    "bright_magenta",
+    "bright_cyan",
+    "bright_white",
+    "reset",
+]
+
+def click_secho(
+    msg: str,
+    nl: bool = True,
+    err: bool = False,
+    color: bool|None = None,
+    fg: ClickColor|None = None
+) -> None:
+    """Wrapper around click.secho with a typed color argument"""
+    click.secho(msg, nl=nl, err=err, color=color, fg=fg)
+
+
 
 @click.group()
 def cli():
@@ -239,7 +270,7 @@ def cli_download_multiple(
         baseunit_ips = [line.strip() for line in f if line.strip()]
 
     async def run_download(baseunit_ip: str, session: ClientSession):
-        click.echo(f"Processing BaseUnit {baseunit_ip}...")
+        click_secho(f"Processing BaseUnit {baseunit_ip}...", fg="white")
         hostname = await get_baseunit_hostname(
             baseunit_ip,
             auth_info=AuthInfo(username=username, password=password),
@@ -269,13 +300,16 @@ def cli_download_multiple(
             output_format=output_format,
             output_file=final_output_file,
             raw_logs=raw_logs,
+            suppress_click_echo=True,
         )
         msg = f"Finished processing BaseUnit {baseunit_ip} (room name: {room_name}, hostname: {hostname})."
         if file_written:
             msg += f" Output file: {output_dir_original / final_output_file.name}."
+            color = "bright_green"
         else:
             msg += " No changes to output file."
-        click.echo(msg)
+            color = None
+        click_secho(msg, fg=color)
 
 
     async def run_downloads():
@@ -297,6 +331,7 @@ async def download(
     session_options: AioHttpSessionOptions|None = None,
     request_options: AioHttpRequestOptions|None = None,
     raw_logs: bool = False,
+    suppress_click_echo: bool = False,
 ):
     auth = AuthInfo(username=username, password=password)
     if raw_logs:
@@ -327,7 +362,11 @@ async def download(
         else:
             output_str = archive.serialize_str()
         if output_file.exists() and output_file.read_text() == output_str:
-            click.echo(f"Output file {output_file} already exists and has the same content, skipping write.")
+            if not suppress_click_echo:
+                click_secho(
+                    f"Output file {output_file} already exists and has the same content, skipping write.",
+                    fg="cyan",
+                )
             return False
         output_file.write_text(output_str)
         return True
@@ -354,7 +393,11 @@ async def download(
         output_str = history.serialize_str()
     if output_file is not None:
         if output_file.exists() and output_file.read_text() == output_str:
-            click.echo(f"Output file {output_file} already exists and has the same content, skipping write.")
+            if not suppress_click_echo:
+                click_secho(
+                    f"Output file {output_file} already exists and has the same content, skipping write.",
+                    fg="cyan"
+                )
             return False
         output_file.write_text(output_str)
         return True
