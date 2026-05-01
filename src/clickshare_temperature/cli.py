@@ -143,6 +143,25 @@ def cli_download(
     ))
 
 
+def get_output_file_for_baseunit(base_dir: Path, room_name: str, hostname: str, output_format: OutputFormat) -> Path:
+    """Find the output file for a BaseUnit based on the room name and hostname.
+
+    The file will be located in the specified base directory,
+    and will have a name in the format "{room_name}.{hostname}.{ext}",
+    where {ext} is either "txt" or "json" depending on the output format.
+
+    If a file already exists in the base directory that matches the hostname
+    and extension, that file will be used instead of creating a new one.
+
+    This allows for appending to existing files if the room name has changed
+    since the last download.
+    """
+    out_ext = "txt" if output_format in ("str", "current") else "json"
+    for p in base_dir.glob(f"*.{hostname}.{out_ext}"):
+        return p
+    return base_dir / f"{room_name}.{hostname}.{out_ext}"
+
+
 @cli.command(name="download-multiple")
 @click.argument(
     "baseunit_ip_file",
@@ -220,7 +239,6 @@ def cli_download_multiple(
 
     async def run_download(baseunit_ip: str, session: ClientSession):
         click.echo(f"Processing BaseUnit {baseunit_ip}...")
-        out_ext = "txt" if output_format in ("str", "current") else "json"
         hostname = await get_baseunit_hostname(
             baseunit_ip,
             auth_info=AuthInfo(username=username, password=password),
@@ -234,8 +252,12 @@ def cli_download_multiple(
             **DEFAULT_REQUEST_OPTIONS,
         )
 
-        append_from_file = append_from / f"{room_name}.{hostname}.{out_ext}"
-        final_output_file = output_dir / f"{room_name}.{hostname}.{out_ext}"
+        append_from_file = get_output_file_for_baseunit(
+            append_from, room_name, hostname, output_format
+        )
+        final_output_file = get_output_file_for_baseunit(
+            output_dir, room_name, hostname, output_format
+        )
 
         await download(
             baseunit_ip=baseunit_ip,
@@ -247,7 +269,7 @@ def cli_download_multiple(
             output_file=final_output_file,
             raw_logs=raw_logs,
         )
-        click.echo(f"Finished processing BaseUnit {baseunit_ip} (room name: {room_name}, hostname: {hostname})")
+        click.echo(f"Finished processing BaseUnit {baseunit_ip} (room name: {room_name}, hostname: {hostname}), output file: {final_output_file})")
 
 
     async def run_downloads():
