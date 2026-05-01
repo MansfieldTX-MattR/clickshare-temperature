@@ -1,7 +1,7 @@
 [project]
 name = "clickshare-temperature"
 version = "0.1.0"
-description = "Add your description here"
+description = "Gather temperature readings from Barco ClickShare devices"
 readme = "README.md"
 license = "MIT"
 authors = [
