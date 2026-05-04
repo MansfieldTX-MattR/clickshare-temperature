@@ -19,6 +19,7 @@ from .baseunit_api import (
 from .temperature_history import TemperatureHistory
 from .log_archive import LogArchive
 from .types import AioHttpRequestOptions, AioHttpSessionOptions
+from .utils import ClickColor, click_secho, get_output_file_for_baseunit
 
 load_dotenv()
 
@@ -27,35 +28,6 @@ type OutputFormat = Literal["str", "json", "current"]
 type AppendFromFormat = Literal["str", "json"]
 
 
-type ClickColor = Literal[
-    "black",
-    "red",
-    "green",
-    "yellow",
-    "blue",
-    "magenta",
-    "cyan",
-    "white",
-    "bright_black",
-    "bright_red",
-    "bright_green",
-    "bright_yellow",
-    "bright_blue",
-    "bright_magenta",
-    "bright_cyan",
-    "bright_white",
-    "reset",
-]
-
-def click_secho(
-    msg: str,
-    nl: bool = True,
-    err: bool = False,
-    color: bool|None = None,
-    fg: ClickColor|None = None
-) -> None:
-    """Wrapper around click.secho with a typed color argument"""
-    click.secho(msg, nl=nl, err=err, color=color, fg=fg)
 
 
 
@@ -177,23 +149,6 @@ def cli_download(
     ))
 
 
-def get_output_file_for_baseunit(base_dir: Path, room_name: str, hostname: str, output_format: OutputFormat) -> Path:
-    """Find the output file for a BaseUnit based on the room name and hostname.
-
-    The file will be located in the specified base directory,
-    and will have a name in the format "{room_name}.{hostname}.{ext}",
-    where {ext} is either "txt" or "json" depending on the output format.
-
-    If a file already exists in the base directory that matches the hostname
-    and extension, that file will be used instead of creating a new one.
-
-    This allows for appending to existing files if the room name has changed
-    since the last download.
-    """
-    out_ext = "txt" if output_format in ("str", "current") else "json"
-    for p in base_dir.glob(f"*.{hostname}.{out_ext}"):
-        return p
-    return base_dir / f"{room_name}.{hostname}.{out_ext}"
 
 
 @cli.command(name="download-multiple")
