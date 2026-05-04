@@ -4,6 +4,7 @@ import asyncio
 from pathlib import Path
 import json
 
+from dotenv import load_dotenv
 from aiohttp import ClientSession
 import click
 
@@ -13,6 +14,8 @@ from .baseunit_api import create_session, get_baseunit_hostname, get_baseunit_ro
 from .temperature_history import TemperatureHistory
 from .log_archive import LogArchive
 from .types import AioHttpRequestOptions, AioHttpSessionOptions
+
+load_dotenv()
 
 DEFAULT_REQUEST_OPTIONS: AioHttpRequestOptions = {
     "ssl": False,
