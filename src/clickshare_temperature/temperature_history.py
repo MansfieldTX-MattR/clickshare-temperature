@@ -6,10 +6,12 @@ from dataclasses import dataclass, field
 
 from aiohttp import ClientSession
 
-from .baseunit_api import download_logs
+from .baseunit_api import download_logs, get_baseunit_info
 from .log_archive import LogArchive, LogEntry, TmpDir
+from .utils import get_baseunit_from_filename
 from .types import (
-    SensorType, SensorTypes, AuthInfo, AioHttpSessionOptions, AioHttpRequestOptions
+    SensorType, SensorTypes, AuthInfo, AioHttpSessionOptions, AioHttpRequestOptions,
+    BaseUnitInfo, BaseUnitInfoSerializeTD,
 )
 
 
@@ -61,18 +63,21 @@ class SensorReading[T: SensorType](NamedTuple):
 
 
 class _TemperatureHistorySerializeTD(TypedDict):
+    base_unit: BaseUnitInfoSerializeTD
     readings: list[_SensorReadingSerializeTD[SensorType]]
 
 
 @dataclass
 class TemperatureHistory:
     """Temperature history for a BaseUnit."""
+    base_unit: BaseUnitInfo
     readings: list[SensorReading[SensorType]] = field(default_factory=list)
     readings_by_timestamp: dict[datetime.datetime, dict[SensorType, SensorReading[SensorType]]] = field(default_factory=dict)
 
     @classmethod
     def from_archive_file(cls, archive_file: Path) -> TemperatureHistory:
         """Create a TemperatureHistory from a log archive file."""
+        base_unit = get_baseunit_from_filename(archive_file)
         archive = LogArchive()
         archive.parse_archive_file(archive_file)
         readings = []
@@ -85,10 +90,10 @@ class TemperatureHistory:
                     if reading.timestamp not in readings_by_timestamp:
                         readings_by_timestamp[reading.timestamp] = {}
                     readings_by_timestamp[reading.timestamp][reading.sensor] = reading
-        return cls(readings=readings, readings_by_timestamp=readings_by_timestamp)
+        return cls(base_unit=base_unit, readings=readings, readings_by_timestamp=readings_by_timestamp)
 
     @classmethod
-    def from_archive_bytes(cls, archive_bytes: bytes) -> TemperatureHistory:
+    def from_archive_bytes(cls, base_unit: BaseUnitInfo, archive_bytes: bytes) -> TemperatureHistory:
         """Create a TemperatureHistory from a log archive file in bytes."""
         archive = LogArchive()
         archive.parse_archive_bytes(archive_bytes)
@@ -102,7 +107,7 @@ class TemperatureHistory:
                     if reading.timestamp not in readings_by_timestamp:
                         readings_by_timestamp[reading.timestamp] = {}
                     readings_by_timestamp[reading.timestamp][reading.sensor] = reading
-        return cls(readings=readings, readings_by_timestamp=readings_by_timestamp)
+        return cls(base_unit=base_unit, readings=readings, readings_by_timestamp=readings_by_timestamp)
 
     @classmethod
     async def from_baseunit(
@@ -114,6 +119,13 @@ class TemperatureHistory:
         **request_options: Unpack[AioHttpRequestOptions]
     ) -> TemperatureHistory:
         """Create a TemperatureHistory by downloading logs from the BaseUnit."""
+        base_unit = await get_baseunit_info(
+            baseunit_ip,
+            auth_info=auth_info,
+            session=session,
+            session_options=session_options,
+            **request_options,
+        )
         with TmpDir() as tmpdir:
             archive_path = tmpdir / "logs.tar.gz"
             with archive_path.open("wb") as f:
@@ -125,7 +137,7 @@ class TemperatureHistory:
                     session_options=session_options,
                     **request_options
                 )
-            return cls.from_archive_bytes(archive_path.read_bytes())
+            return cls.from_archive_bytes(base_unit, archive_path.read_bytes())
 
     @classmethod
     def _parse_archive_entry(cls, entry: LogEntry) -> SensorReading|None:
@@ -199,26 +211,28 @@ class TemperatureHistory:
     def serialize(self) -> _TemperatureHistorySerializeTD:
         """Serialize the TemperatureHistory to a dictionary."""
         return {
+            "base_unit": self.base_unit.serialize(),
             "readings": [reading.serialize() for reading in self.readings],
         }
 
     @classmethod
     def deserialize(cls, data: _TemperatureHistorySerializeTD) -> TemperatureHistory:
         """Deserialize a TemperatureHistory from a dictionary."""
+        base_unit = BaseUnitInfo.deserialize(data["base_unit"])
         readings = [SensorReading.deserialize(reading_data) for reading_data in data["readings"]]
         readings_by_timestamp: dict[datetime.datetime, dict[SensorType, SensorReading[SensorType]]] = {}
         for reading in readings:
             if reading.timestamp not in readings_by_timestamp:
                 readings_by_timestamp[reading.timestamp] = {}
             readings_by_timestamp[reading.timestamp][reading.sensor] = reading
-        return cls(readings=readings, readings_by_timestamp=readings_by_timestamp)
+        return cls(base_unit=base_unit, readings=readings, readings_by_timestamp=readings_by_timestamp)
 
     def serialize_str(self) -> str:
         """Serialize the TemperatureHistory to a string."""
         return "\n".join(reading.serialize_str() for reading in self.readings)
 
     @classmethod
-    def deserialize_str(cls, s: str) -> TemperatureHistory:
+    def deserialize_str(cls, base_unit: BaseUnitInfo, s: str) -> TemperatureHistory:
         """Deserialize a TemperatureHistory from a string."""
         readings = [SensorReading.deserialize_str(line) for line in s.splitlines()]
         readings_by_timestamp: dict[datetime.datetime, dict[SensorType, SensorReading[SensorType]]] = {}
@@ -226,4 +240,4 @@ class TemperatureHistory:
             if reading.timestamp not in readings_by_timestamp:
                 readings_by_timestamp[reading.timestamp] = {}
             readings_by_timestamp[reading.timestamp][reading.sensor] = reading
-        return cls(readings=readings, readings_by_timestamp=readings_by_timestamp)
+        return cls(base_unit=base_unit, readings=readings, readings_by_timestamp=readings_by_timestamp)
