@@ -18,6 +18,11 @@ dependencies = [
 [project.scripts]
 clickshare-temperature = "clickshare_temperature:main"
 
+[project.optional-dependencies]
+influx = [
+    "influxdb3-python>=0.19.0",
+]
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
