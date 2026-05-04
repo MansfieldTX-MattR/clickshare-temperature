@@ -10,18 +10,19 @@ import click
 
 from clickshare_temperature.types import AuthInfo
 
-from .baseunit_api import create_session, get_baseunit_hostname, get_baseunit_roomname
+from .baseunit_api import (
+    create_session,
+    get_baseunit_hostname,
+    get_baseunit_roomname,
+    DEFAULT_REQUEST_OPTIONS,
+    DEFAULT_SESSION_OPTIONS,
+)
 from .temperature_history import TemperatureHistory
 from .log_archive import LogArchive
 from .types import AioHttpRequestOptions, AioHttpSessionOptions
 
 load_dotenv()
 
-DEFAULT_REQUEST_OPTIONS: AioHttpRequestOptions = {
-    "ssl": False,
-}
-
-DEFAULT_SESSION_OPTIONS: AioHttpSessionOptions = {}
 
 type OutputFormat = Literal["str", "json", "current"]
 type AppendFromFormat = Literal["str", "json"]

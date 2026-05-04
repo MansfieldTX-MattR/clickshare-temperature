@@ -9,6 +9,12 @@ from .types import (
     AuthInfo, AioHttpSessionOptions, AioHttpRequestOptions,
 )
 
+DEFAULT_REQUEST_OPTIONS: AioHttpRequestOptions = {
+    "ssl": False,
+}
+
+DEFAULT_SESSION_OPTIONS: AioHttpSessionOptions = {}
+
 
 type ChunkHandler = Callable[[bytes], Any]
 
