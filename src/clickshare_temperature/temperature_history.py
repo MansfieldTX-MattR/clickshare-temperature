@@ -1,11 +1,10 @@
 from __future__ import annotations
 from typing import NamedTuple, TypedDict, Unpack
-import asyncio
 import datetime
 from pathlib import Path
 from dataclasses import dataclass, field
 
-from aiohttp import ClientSession, BasicAuth
+from aiohttp import ClientSession
 
 from .baseunit_api import download_logs
 from .log_archive import LogArchive, LogEntry, TmpDir

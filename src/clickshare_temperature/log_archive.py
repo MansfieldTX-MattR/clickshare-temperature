@@ -1,14 +1,12 @@
 from __future__ import annotations
 import io
-from typing import Literal, Self, NamedTuple, TypedDict, Iterator, Unpack, get_args
+from typing import Self, NamedTuple, TypedDict, Iterator, Unpack
 from pathlib import Path
-import shutil
 import tarfile
 import gzip
 import tempfile
 from dataclasses import dataclass, field
 import datetime
-from zoneinfo import ZoneInfo
 
 from .baseunit_api import download_logs
 from .types import AuthInfo, LogLevel, LogLevels, AioHttpRequestOptions, AioHttpSessionOptions
@@ -80,8 +78,8 @@ class LogFile:
                 # try:
                 entry = LogEntry.from_log_line(line)
                 self.entries.append(entry)
-                l = self.entries_by_timestamp.setdefault(entry.timestamp, [])
-                l.append(entry)
+                entry_list = self.entries_by_timestamp.setdefault(entry.timestamp, [])
+                entry_list.append(entry)
                 # assert entry.timestamp not in self.entries_by_timestamp, f"Duplicate timestamp in log file {self.filename}: {entry.timestamp}"
                 # self.entries_by_timestamp[entry.timestamp] = entry
                 # except Exception as e:
