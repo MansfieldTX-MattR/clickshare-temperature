@@ -21,3 +21,13 @@ clickshare-temperature = "clickshare_temperature:main"
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+
+[tool.mypy]
+packages = ["clickshare_temperature"]
+
+
+[dependency-groups]
+dev = [
+    "mypy>=1.20.2",
+]
