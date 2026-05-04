@@ -21,6 +21,14 @@ from .log_archive import LogArchive
 from .types import AioHttpRequestOptions, AioHttpSessionOptions
 from .utils import ClickColor, click_secho, get_output_file_for_baseunit
 
+
+influxdb_cli: None|click.Group
+try:
+    from .influxdb import cli as influxdb_cli
+except ImportError:
+    influxdb_cli = None
+
+
 load_dotenv()
 
 
@@ -120,6 +128,11 @@ def parse(input_file: Path, output_format: OutputFormat, output_file: Path|None)
     help="Path to output file. If not provided, the output will be printed to stdout.",
 )
 @click.option(
+    "--upload-influx",
+    is_flag=True,
+    help="If set, the historical temperature data will be uploaded to InfluxDB using the Prometheus Remote Write API after it is downloaded and parsed.",
+)
+@click.option(
     "--raw-logs",
     is_flag=True,
     help="If set, the raw log archive will be downloaded and saved to the specified output file instead of " \
@@ -135,9 +148,12 @@ def cli_download(
     output_format: OutputFormat,
     output_file: Path|None,
     raw_logs: bool,
+    upload_influx: bool,
 ):
     """Download logs from the BaseUnit and extract temperature readings."""
-    asyncio.run(download(
+    if upload_influx and raw_logs:
+        raise ValueError("Cannot use --upload-influx flag when --raw-logs flag is set, because raw logs cannot be parsed for temperature readings.")
+    obj, appended = asyncio.run(download(
         baseunit_ip=baseunit_ip,
         username=username,
         password=password,
@@ -147,6 +163,21 @@ def cli_download(
         output_file=output_file,
         raw_logs=raw_logs,
     ))
+    if upload_influx:
+        from .influxdb import backfill_readings
+
+        assert isinstance(obj, TemperatureHistory)
+        base_unit = asyncio.run(get_baseunit_info(
+            baseunit_ip,
+            auth_info=AuthInfo(username=username, password=password),
+            **DEFAULT_REQUEST_OPTIONS,
+        ))
+        num_points = backfill_readings(base_unit, obj)
+        if num_points > 0:
+            click_secho(f"Uploaded {num_points} new points for BaseUnit {base_unit.hostname} to InfluxDB.", fg="bright_green")
+        else:
+            click_secho(f"No new points to upload for BaseUnit {base_unit.hostname}.", fg="blue")
+
 
 
 
@@ -203,6 +234,11 @@ def cli_download(
     "a file will be created in this directory with the hostname of the BaseUnit containing the output for that BaseUnit.",
 )
 @click.option(
+    "--upload-influx",
+    is_flag=True,
+    help="If set, the historical temperature data will be uploaded to InfluxDB using the Prometheus Remote Write API after it is downloaded and parsed.",
+)
+@click.option(
     "--raw-logs",
     is_flag=True,
     help="If set, the raw log archive will be downloaded and saved to the specified output file instead of " \
@@ -217,9 +253,12 @@ def cli_download_multiple(
     append_from_format: AppendFromFormat,
     output_format: OutputFormat,
     output_dir: Path,
+    upload_influx: bool,
     raw_logs: bool,
 ):
     """Download logs from multiple BaseUnits and extract temperature readings."""
+    if upload_influx and raw_logs:
+        raise ValueError("Cannot use --upload-influx flag when --raw-logs flag is set, because raw logs cannot be parsed for temperature readings.")
     baseunit_ip_file = baseunit_ip_file.expanduser().resolve()
     output_dir_original = output_dir
     output_dir = output_dir.expanduser().resolve()
@@ -243,7 +282,7 @@ def cli_download_multiple(
             output_dir, base_unit.room_name, base_unit.hostname, output_format
         )
 
-        file_written = await download(
+        obj, file_written = await download(
             baseunit_ip=baseunit_ip,
             username=username,
             password=password,
@@ -254,13 +293,24 @@ def cli_download_multiple(
             raw_logs=raw_logs,
             suppress_click_echo=True,
         )
-        msg = f"Finished processing BaseUnit {baseunit_ip} (room name: {room_name}, hostname: {hostname})."
+        msg = f"Finished processing BaseUnit {baseunit_ip} (base unit: {base_unit})."
+        color: ClickColor|None = None
         if file_written:
             msg += f" Output file: {output_dir_original / final_output_file.name}."
             color = "bright_green"
         else:
             msg += " No changes to output file."
-            color = None
+
+        if upload_influx:
+            from .influxdb import backfill_readings
+            assert isinstance(obj, TemperatureHistory)
+            click_secho(f"Uploading historical data for BaseUnit {base_unit} to InfluxDB...", fg="yellow")
+            num_points = backfill_readings(base_unit, obj)
+            if num_points > 0:
+                click_secho(f"Uploaded {num_points} new points for BaseUnit {base_unit.hostname} to InfluxDB.", fg="bright_green")
+            else:
+                click_secho(f"No new points to upload for BaseUnit {base_unit.hostname}.", fg="blue")
+
         click_secho(msg, fg=color)
 
 
@@ -319,9 +369,9 @@ async def download(
                     f"Output file {output_file} already exists and has the same content, skipping write.",
                     fg="cyan",
                 )
-            return False
+            return archive, False
         output_file.write_text(output_str)
-        return True
+        return archive, True
     history = await TemperatureHistory.from_baseunit(
         baseunit_ip,
         auth_info=auth,
@@ -335,7 +385,7 @@ async def download(
             if append_from_format == "json":
                 append_history = TemperatureHistory.deserialize(json.loads(s))
             else:
-                append_history = TemperatureHistory.deserialize_str(s)
+                append_history = TemperatureHistory.deserialize_str(history.base_unit, s)
             history = history.combine_with(append_history)
     if output_format == "json":
         output_str = json.dumps(history.serialize(), indent=2)
@@ -350,12 +400,15 @@ async def download(
                     f"Output file {output_file} already exists and has the same content, skipping write.",
                     fg="cyan"
                 )
-            return False
+            return history, False
         output_file.write_text(output_str)
-        return True
+        return history, True
     click.echo(output_str)
-    return True
+    return history, True
 
+
+if influxdb_cli is not None:
+    cli.add_command(influxdb_cli)
 
 if __name__ == "__main__":
     cli()
