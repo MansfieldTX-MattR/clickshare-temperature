@@ -15,6 +15,44 @@ class AuthInfo(NamedTuple):
     password: str
 
 
+class BaseUnitInfoSerializeTD(TypedDict):
+    """TypedDict for serializing BaseUnitInfo to JSON
+    """
+    ip_address: str
+    hostname: str
+    room_name: str
+
+
+class BaseUnitInfo(NamedTuple):
+    """Information about a ClickShare BaseUnit
+    """
+    ip_address: str
+    """IP address of the BaseUnit"""
+    hostname: str
+    """Hostname of the BaseUnit"""
+    room_name: str
+    """Name of the meeting room the BaseUnit is located in"""
+
+    def serialize(self) -> BaseUnitInfoSerializeTD:
+        """Serialize the :class:`BaseUnitInfo` to a dictionary for JSON serialization
+        """
+        return {
+            "ip_address": self.ip_address,
+            "hostname": self.hostname,
+            "room_name": self.room_name,
+        }
+
+    @classmethod
+    def deserialize(cls, data: BaseUnitInfoSerializeTD) -> BaseUnitInfo:
+        """Deserialize a dictionary into a :class:`BaseUnitInfo` object
+        """
+        return cls(
+            ip_address=data["ip_address"],
+            hostname=data["hostname"],
+            room_name=data["room_name"],
+        )
+
+
 type LogLevel = Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
 LogLevels: tuple[LogLevel, ...] = ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL")
 

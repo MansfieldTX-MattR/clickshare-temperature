@@ -12,8 +12,7 @@ from clickshare_temperature.types import AuthInfo
 
 from .baseunit_api import (
     create_session,
-    get_baseunit_hostname,
-    get_baseunit_roomname,
+    get_baseunit_info,
     DEFAULT_REQUEST_OPTIONS,
     DEFAULT_SESSION_OPTIONS,
 )
@@ -275,13 +274,7 @@ def cli_download_multiple(
 
     async def run_download(baseunit_ip: str, session: ClientSession):
         click_secho(f"Processing BaseUnit {baseunit_ip}...", fg="white")
-        hostname = await get_baseunit_hostname(
-            baseunit_ip,
-            auth_info=AuthInfo(username=username, password=password),
-            session=session,
-            **DEFAULT_REQUEST_OPTIONS,
-        )
-        room_name = await get_baseunit_roomname(
+        base_unit = await get_baseunit_info(
             baseunit_ip,
             auth_info=AuthInfo(username=username, password=password),
             session=session,
@@ -289,10 +282,10 @@ def cli_download_multiple(
         )
 
         append_from_file = get_output_file_for_baseunit(
-            append_from, room_name, hostname, output_format
+            append_from, base_unit.room_name, base_unit.hostname, output_format
         )
         final_output_file = get_output_file_for_baseunit(
-            output_dir, room_name, hostname, output_format
+            output_dir, base_unit.room_name, base_unit.hostname, output_format
         )
 
         file_written = await download(

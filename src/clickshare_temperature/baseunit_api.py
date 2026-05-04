@@ -1,12 +1,13 @@
 from __future__ import annotations
-from typing import Unpack, Callable, Any, AsyncGenerator, overload
+import asyncio
+from typing import Literal, Awaitable, Unpack, Callable, Any, AsyncGenerator, overload
 from contextlib import asynccontextmanager
 
 from aiohttp import ClientSession, BasicAuth, ClientResponse
 from yarl import URL
 
 from .types import (
-    AuthInfo, AioHttpSessionOptions, AioHttpRequestOptions,
+    BaseUnitInfo, AuthInfo, AioHttpSessionOptions, AioHttpRequestOptions,
 )
 
 DEFAULT_REQUEST_OPTIONS: AioHttpRequestOptions = {
@@ -16,6 +17,7 @@ DEFAULT_REQUEST_OPTIONS: AioHttpRequestOptions = {
 DEFAULT_SESSION_OPTIONS: AioHttpSessionOptions = {}
 
 
+type CoroFunc[T] = Callable[..., Awaitable[T]]
 type ChunkHandler = Callable[[bytes], Any]
 
 
@@ -107,6 +109,40 @@ async def get_baseunit_roomname(
     ) as response:
         data = await response.json()
         return data["meetingRoomName"]
+
+
+async def get_baseunit_info(
+    baseunit_ip: str,
+    /,
+    auth_info: AuthInfo|None = None,
+    session: ClientSession|None = None,
+    session_options: AioHttpSessionOptions|None = None,
+    **request_options: Unpack[AioHttpRequestOptions],
+) -> BaseUnitInfo:
+    """Get the :class:`.BaseUnitInfo` for the BaseUnit at the given IP address
+    """
+    async def get_from_api(
+        key: Literal["hostname", "room_name"],
+        function: CoroFunc[str]
+    ) -> tuple[Literal["hostname", "room_name"], str]:
+        value = await function(
+            baseunit_ip,
+            auth_info=auth_info,
+            session=session,
+            session_options=session_options,
+            **request_options,
+        )
+        return key, value
+    results = await asyncio.gather(
+        get_from_api("hostname", get_baseunit_hostname),
+        get_from_api("room_name", get_baseunit_roomname),
+    )
+    result_dict = {key: value for key, value in results}
+    return BaseUnitInfo(
+        ip_address=baseunit_ip,
+        hostname=result_dict["hostname"],
+        room_name=result_dict["room_name"],
+    )
 
 
 @overload
