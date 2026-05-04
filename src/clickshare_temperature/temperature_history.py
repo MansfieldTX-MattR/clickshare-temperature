@@ -14,6 +14,11 @@ from .types import (
 )
 
 
+class _SensorReadingSerializeTD[_T: SensorType](TypedDict):
+    timestamp: str
+    sensor: _T
+    value: float
+
 
 class SensorReading[T: SensorType](NamedTuple):
     """A sensor reading from the BaseUnit."""
@@ -24,12 +29,7 @@ class SensorReading[T: SensorType](NamedTuple):
     value: float
     """Temperature value in degrees Celsius."""
 
-    class SerializeTD[_T: SensorType](TypedDict):
-        timestamp: str
-        sensor: _T
-        value: float
-
-    def serialize(self) -> SerializeTD[T]:
+    def serialize(self) -> _SensorReadingSerializeTD[T]:
         """Serialize the SensorReading to a dictionary."""
         return {
             "timestamp": self.timestamp.isoformat(),
@@ -38,7 +38,7 @@ class SensorReading[T: SensorType](NamedTuple):
         }
 
     @staticmethod
-    def deserialize[_T: SensorType](data: SensorReading.SerializeTD[_T]) -> SensorReading[_T]:
+    def deserialize[_T: SensorType](data: _SensorReadingSerializeTD[_T]) -> SensorReading[_T]:
         """Deserialize a SensorReading from a dictionary."""
         timestamp = datetime.datetime.fromisoformat(data["timestamp"])
         sensor = data["sensor"]
@@ -61,14 +61,15 @@ class SensorReading[T: SensorType](NamedTuple):
         return SensorReading(timestamp=timestamp, sensor=sensor, value=value)
 
 
+class _TemperatureHistorySerializeTD(TypedDict):
+    readings: list[_SensorReadingSerializeTD[SensorType]]
+
+
 @dataclass
 class TemperatureHistory:
     """Temperature history for a BaseUnit."""
     readings: list[SensorReading[SensorType]] = field(default_factory=list)
     readings_by_timestamp: dict[datetime.datetime, dict[SensorType, SensorReading[SensorType]]] = field(default_factory=dict)
-
-    class SerializeTD(TypedDict):
-        readings: list[SensorReading.SerializeTD[SensorType]]
 
     @classmethod
     def from_archive_file(cls, archive_file: Path) -> TemperatureHistory:
@@ -196,14 +197,14 @@ class TemperatureHistory:
         return True
 
 
-    def serialize(self) -> SerializeTD:
+    def serialize(self) -> _TemperatureHistorySerializeTD:
         """Serialize the TemperatureHistory to a dictionary."""
         return {
             "readings": [reading.serialize() for reading in self.readings],
         }
 
     @classmethod
-    def deserialize(cls, data: SerializeTD) -> TemperatureHistory:
+    def deserialize(cls, data: _TemperatureHistorySerializeTD) -> TemperatureHistory:
         """Deserialize a TemperatureHistory from a dictionary."""
         readings = [SensorReading.deserialize(reading_data) for reading_data in data["readings"]]
         readings_by_timestamp: dict[datetime.datetime, dict[SensorType, SensorReading[SensorType]]] = {}

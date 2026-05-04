@@ -54,6 +54,11 @@ class TmpDir:
         self.close()
 
 
+class _LogFileSerializeTD(TypedDict):
+    filename: str
+    index: int
+    entries: list[_LogEntrySerializeTD]
+
 
 @dataclass
 class LogFile:
@@ -62,11 +67,6 @@ class LogFile:
     index: int
     entries: list[LogEntry] = field(default_factory=list)
     entries_by_timestamp: dict[datetime.datetime, list[LogEntry]] = field(default_factory=dict)
-
-    class SerializeTD(TypedDict):
-        filename: str
-        index: int
-        entries: list[LogEntry.SerializeTD]
 
     def parse_entries(self):
         """Parse the log file into a sequence of LogEntry objects."""
@@ -87,7 +87,7 @@ class LogFile:
                 # except Exception as e:
                 #     print(f"Error parsing log line: {line}\n{e}")
 
-    def serialize(self) -> SerializeTD:
+    def serialize(self) -> _LogFileSerializeTD:
         """Serialize the LogFile to a dictionary."""
         return {
             "filename": self.filename.name,
@@ -96,7 +96,7 @@ class LogFile:
         }
 
     @classmethod
-    def deserialize(cls, data: SerializeTD) -> Self:
+    def deserialize(cls, data: _LogFileSerializeTD) -> Self:
         """Deserialize a LogFile from a dictionary."""
         return cls(
             filename=Path(data["filename"]),
@@ -166,6 +166,13 @@ class LogFile:
                 yield timestamp, entry
 
 
+class _LogEntrySerializeTD(TypedDict):
+    timestamp: str
+    hostname: str
+    process: str
+    level: LogLevel|None
+    message: str
+
 
 class LogEntry(NamedTuple):
     """A log entry parsed from a log file."""
@@ -174,13 +181,6 @@ class LogEntry(NamedTuple):
     process: str
     level: LogLevel|None
     message: str
-
-    class SerializeTD(TypedDict):
-        timestamp: str
-        hostname: str
-        process: str
-        level: LogLevel|None
-        message: str
 
     @classmethod
     def from_log_line(cls, line: str) -> Self:
@@ -211,7 +211,7 @@ class LogEntry(NamedTuple):
         level, message = parse_log_level(rest)
         return cls(timestamp=timestamp, hostname=hostname, process=process, level=level, message=message)
 
-    def serialize(self) -> SerializeTD:
+    def serialize(self) -> _LogEntrySerializeTD:
         """Serialize the LogEntry to a dictionary."""
         return {
             "timestamp": self.timestamp.isoformat(),
@@ -222,7 +222,7 @@ class LogEntry(NamedTuple):
         }
 
     @classmethod
-    def deserialize(cls, data: SerializeTD) -> Self:
+    def deserialize(cls, data: _LogEntrySerializeTD) -> Self:
         """Deserialize a LogEntry from a dictionary."""
         timestamp = datetime.datetime.fromisoformat(data["timestamp"])
         return cls(
@@ -244,28 +244,28 @@ class LogEntry(NamedTuple):
         """Deserialize a LogEntry from a log line string."""
         return cls.from_log_line(line)
 
-    def __gt__(self, other: LogEntry|datetime.datetime) -> bool:
+    def __gt__(self, other: LogEntry|datetime.datetime) -> bool: # type: ignore[override]
         if isinstance(other, LogEntry):
             return self.timestamp > other.timestamp
         if isinstance(other, datetime.datetime):
             return self.timestamp > other
         return NotImplemented
 
-    def __lt__(self, other: LogEntry|datetime.datetime) -> bool:
+    def __lt__(self, other: LogEntry|datetime.datetime) -> bool: # type: ignore[override]
         if isinstance(other, LogEntry):
             return self.timestamp < other.timestamp
         if isinstance(other, datetime.datetime):
             return self.timestamp < other
         return NotImplemented
 
-    def __ge__(self, other: LogEntry|datetime.datetime) -> bool:
+    def __ge__(self, other: LogEntry|datetime.datetime) -> bool: # type: ignore[override]
         if isinstance(other, LogEntry):
             return self.timestamp >= other.timestamp
         if isinstance(other, datetime.datetime):
             return self.timestamp >= other
         return NotImplemented
 
-    def __le__(self, other: LogEntry|datetime.datetime) -> bool:
+    def __le__(self, other: LogEntry|datetime.datetime) -> bool: # type: ignore[override]
         if isinstance(other, LogEntry):
             return self.timestamp <= other.timestamp
         if isinstance(other, datetime.datetime):
@@ -273,6 +273,8 @@ class LogEntry(NamedTuple):
         return NotImplemented
 
 
+class _LogArchiveSerializeTD(TypedDict):
+    log_files: list[_LogFileSerializeTD]
 
 
 class LogArchive:
@@ -292,9 +294,6 @@ class LogArchive:
     """
 
     log_files: list[LogFile]
-
-    class SerializeTD(TypedDict):
-        log_files: list[LogFile.SerializeTD]
 
     def __init__(self) -> None:
         # self._archive_bytes = archive_bytes
@@ -405,14 +404,14 @@ class LogArchive:
     def __len__(self):
         return len(self.log_files)
 
-    def serialize(self) -> SerializeTD:
+    def serialize(self) -> _LogArchiveSerializeTD:
         """Serialize the LogArchive to a dictionary."""
         return {
             "log_files": [log_file.serialize() for log_file in self.log_files]
         }
 
     @classmethod
-    def deserialize(cls, data: SerializeTD) -> Self:
+    def deserialize(cls, data: _LogArchiveSerializeTD) -> Self:
         """Deserialize a LogArchive from a dictionary."""
         archive = cls()
         archive.log_files = [
@@ -436,12 +435,12 @@ class LogArchive:
         archive.log_files.append(log_file)
         return archive
 
-    def serialize_entries(self) -> list[LogEntry.SerializeTD]:
+    def serialize_entries(self) -> list[_LogEntrySerializeTD]:
         """Serialize all log entries in the archive to a list of dictionaries."""
         return [entry.serialize() for entry in self.all_entries(unique=True)]
 
     @classmethod
-    def deserialize_entries(cls, entries_data: list[LogEntry.SerializeTD]) -> Self:
+    def deserialize_entries(cls, entries_data: list[_LogEntrySerializeTD]) -> Self:
         """Deserialize a LogArchive from a list of log entry dictionaries."""
         archive = cls()
         entries = [LogEntry.deserialize(entry_data) for entry_data in entries_data]
