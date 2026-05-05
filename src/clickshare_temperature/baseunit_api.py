@@ -1,7 +1,11 @@
 from __future__ import annotations
 import asyncio
-from typing import Literal, Awaitable, Unpack, Callable, Any, AsyncGenerator, overload
+from typing import (
+    Literal, Awaitable, Unpack, Callable, Any, AsyncGenerator, TypedDict,
+    overload,
+)
 from contextlib import asynccontextmanager
+import datetime
 
 from aiohttp import ClientSession, BasicAuth, ClientResponse
 from yarl import URL
@@ -143,6 +147,67 @@ async def get_baseunit_info(
         hostname=result_dict["hostname"],
         room_name=result_dict["room_name"],
     )
+
+
+class BaseUnitStatusResponse(TypedDict):
+    currentUptime: int
+    """Current uptime of the BaseUnit in seconds"""
+    errorCode: BaseUnitStatusErrorCode
+    """Error code indicating the status of the BaseUnit"""
+    errorMessage: str
+    """Error message if the error code is not "Ok" (otherwise an empty string)"""
+    firstUsed: str
+    """Timestamp of when the BaseUnit was first used in isoformat"""
+    inUse: bool
+    """Whether the BaseUnit is currently in use"""
+    sharing: bool
+    """Whether the BaseUnit is currently sharing"""
+    totalUptime: int
+    """Total uptime of the BaseUnit in seconds"""
+
+
+async def get_baseunit_status(
+    baseunit_ip: str,
+    /,
+    auth_info: AuthInfo|None = None,
+    session: ClientSession|None = None,
+    session_options: AioHttpSessionOptions|None = None,
+    **request_options: Unpack[AioHttpRequestOptions],
+) -> BaseUnitStatus:
+    """Get the :class:`.BaseUnitStatus` for the BaseUnit at the given IP address
+    """
+    async with api_request(
+        baseunit_ip,
+        "configuration/system/status",
+        auth_info=auth_info,
+        session=session,
+        session_options=session_options,
+        **request_options,
+    ) as response:
+        data = await response.json()
+        info = BaseUnitStatusResponse(**data)
+        first_used = datetime.datetime.fromisoformat(info["firstUsed"])
+        if not timezone.is_aware(first_used):
+            tz = timezone.get_local_timezone()
+            if tz is timezone.NotFound:
+                raise ValueError("Could not determine local timezone to make firstUsed timestamp aware")
+            first_used = timezone.make_aware(first_used, tz)
+        return BaseUnitStatus(
+            base_unit=await get_baseunit_info(
+                baseunit_ip,
+                auth_info=auth_info,
+                session=session,
+                session_options=session_options,
+                **request_options,
+            ),
+            current_uptime=datetime.timedelta(seconds=info["currentUptime"]),
+            total_uptime=datetime.timedelta(seconds=info["totalUptime"]),
+            error_code=info["errorCode"],
+            error_message=None if not len(info["errorMessage"].strip()) else info["errorMessage"],
+            first_used=first_used,
+            in_use=info["inUse"],
+            sharing=info["sharing"],
+        )
 
 
 @overload
