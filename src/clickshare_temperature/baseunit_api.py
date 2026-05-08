@@ -11,8 +11,15 @@ from aiohttp import ClientSession, ClientTimeout, BasicAuth, ClientResponse
 from yarl import URL
 
 from .types import (
-    BaseUnitInfo, AuthInfo, AioHttpSessionOptions, AioHttpRequestOptions,
+    BaseUnitInfo,
+    BaseUnitIdentity,
+    BaseUnitStatus,
+    AuthInfo,
+    AioHttpSessionOptions,
+    AioHttpRequestOptions,
+    BaseUnitStatusErrorCode,
 )
+from . import timezone
 
 DEFAULT_REQUEST_OPTIONS: AioHttpRequestOptions = {
     "ssl": False,
@@ -148,6 +155,88 @@ async def get_baseunit_info(
         hostname=result_dict["hostname"],
         room_name=result_dict["room_name"],
     )
+
+class BaseUnitIdentityResponse(TypedDict):
+    articleNumber: str
+    hardwareVersion: str
+    modelName: str
+    productName: str
+    serialNumber: str
+
+
+async def get_baseunit_identity(
+    baseunit_ip: str,
+    /,
+    auth_info: AuthInfo|None = None,
+    session: ClientSession|None = None,
+    session_options: AioHttpSessionOptions|None = None,
+    **request_options: Unpack[AioHttpRequestOptions],
+) -> BaseUnitIdentity:
+    """Get the :class:`.BaseUnitIdentity` for the BaseUnit at the given IP address
+    """
+    async with api_request(
+        baseunit_ip,
+        "configuration/system/device-identity",
+        auth_info=auth_info,
+        session=session,
+        session_options=session_options,
+        **request_options,
+    ) as response:
+        data = await response.json()
+        info = BaseUnitIdentityResponse(**data)
+        return BaseUnitIdentity(
+            article_number=info["articleNumber"],
+            hardware_version=info["hardwareVersion"],
+            model_name=info["modelName"],
+            product_name=info["productName"],
+            serial_number=info["serialNumber"],
+        )
+
+
+type PowerModeStatus = Literal["On", "Standby"]
+"""Power mode status of the BaseUnit, either "On" or "Standby" """
+
+type PowerMode = Literal["EcoStandby", "NetworkedStandby", "DeepStandby"]
+"""Power mode of the BaseUnit, either "EcoStandby", "NetworkedStandby", or "DeepStandby" """
+
+
+class PowerManagementResponse(TypedDict):
+    """Response for the power management API endpoint
+    """
+    powerMode: PowerMode
+    """Current power mode of the BaseUnit (e.g. "EcoStandby")"""
+    standbyTimeout: str
+    """Current standby timeout of the BaseUnit"""
+    status: PowerModeStatus
+    """Current power status of the BaseUnit (e.g. "On")"""
+    supportedPowerModes: list[PowerMode]
+    """List of supported power modes"""
+    supportedStandbyTimeouts: list[str]
+    """List of supported standby timeouts"""
+    supportedStatuses: list[PowerModeStatus]
+    """List of supported power statuses"""
+
+
+async def get_power_management_info(
+    baseunit_ip: str,
+    /,
+    auth_info: AuthInfo|None = None,
+    session: ClientSession|None = None,
+    session_options: AioHttpSessionOptions|None = None,
+    **request_options: Unpack[AioHttpRequestOptions],
+) -> PowerManagementResponse:
+    """Get the power management information for the BaseUnit at the given IP address
+    """
+    async with api_request(
+        baseunit_ip,
+        "configuration/system/power-management",
+        auth_info=auth_info,
+        session=session,
+        session_options=session_options,
+        **request_options,
+    ) as response:
+        data = await response.json()
+        return PowerManagementResponse(**data)
 
 
 class BaseUnitStatusResponse(TypedDict):

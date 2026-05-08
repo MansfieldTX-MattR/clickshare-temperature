@@ -54,6 +54,51 @@ class BaseUnitInfo(NamedTuple):
             room_name=data["room_name"],
         )
 
+
+class BaseUnitIdentitySerializeTD(TypedDict):
+    """TypedDict for serializing BaseUnitIdentity to JSON"""
+    article_number: str
+    hardware_version: str
+    model_name: str
+    product_name: str
+    serial_number: str
+
+class BaseUnitIdentity(NamedTuple):
+    """Identity information about a ClickShare BaseUnit
+    """
+    article_number: str
+    """Article number of the BaseUnit, e.g. "R9861511EU" """
+    hardware_version: str
+    """Hardware version of the BaseUnit"""
+    model_name: str
+    """Model name of the BaseUnit"""
+    product_name: str
+    """Product name of the BaseUnit"""
+    serial_number: str
+    """Serial number of the BaseUnit"""
+
+    def serialize(self) -> BaseUnitIdentitySerializeTD:
+        """Serialize the :class:`BaseUnitIdentity` to a dictionary for JSON serialization"""
+        return {
+            "article_number": self.article_number,
+            "hardware_version": self.hardware_version,
+            "model_name": self.model_name,
+            "product_name": self.product_name,
+            "serial_number": self.serial_number,
+        }
+
+    @classmethod
+    def deserialize(cls, data: BaseUnitIdentitySerializeTD) -> BaseUnitIdentity:
+        """Deserialize a dictionary into a :class:`BaseUnitIdentity` object"""
+        return cls(
+            article_number=data["article_number"],
+            hardware_version=data["hardware_version"],
+            model_name=data["model_name"],
+            product_name=data["product_name"],
+            serial_number=data["serial_number"],
+        )
+
+
 type BaseUnitStatusErrorCode = Literal["Ok", "Warning", "Error"]
 
 class BaseUnitStatusSerializeTD(TypedDict):
