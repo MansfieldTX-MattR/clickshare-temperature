@@ -111,6 +111,20 @@ class BaseUnitStatus(NamedTuple):
             sharing=data["sharing"],
         )
 
+    def as_timezone(self, tz: datetime.tzinfo) -> BaseUnitStatus:
+        """Return a copy of this BaseUnitStatus with the first_used timestamp converted to the given timezone"""
+        if self.first_used.tzinfo is None:
+            raise ValueError("Cannot convert timezone of naive datetime")
+        return BaseUnitStatus(
+            base_unit=self.base_unit,
+            current_uptime=self.current_uptime,
+            total_uptime=self.total_uptime,
+            error_code=self.error_code,
+            error_message=self.error_message,
+            first_used=self.first_used.astimezone(tz),
+            in_use=self.in_use,
+            sharing=self.sharing,
+        )
 
 
 type LogLevel = Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]

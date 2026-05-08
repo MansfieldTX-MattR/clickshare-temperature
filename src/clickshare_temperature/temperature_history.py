@@ -30,6 +30,14 @@ class SensorReading[T: SensorType](NamedTuple):
     value: float
     """Temperature value in degrees Celsius."""
 
+    def as_timezone(self, tzinfo: datetime.tzinfo) -> SensorReading[T]:
+        """Return a copy of this SensorReading with the timestamp converted to the given timezone."""
+        return SensorReading(
+            timestamp=self.timestamp.astimezone(tzinfo),
+            sensor=self.sensor,
+            value=self.value,
+        )
+
     def serialize(self) -> _SensorReadingSerializeTD[T]:
         """Serialize the SensorReading to a dictionary."""
         return {
