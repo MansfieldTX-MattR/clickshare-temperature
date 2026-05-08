@@ -4,7 +4,8 @@ import datetime
 
 if TYPE_CHECKING:
     from ssl import SSLContext
-    from aiohttp import BasicAuth, BaseConnector
+    from aiohttp import BasicAuth, BaseConnector, ClientTimeout
+    from aiohttp.helpers import _SENTINEL
     from aiohttp.client_reqrep import Fingerprint
     from aiohttp.client_middlewares import ClientMiddlewareType
     from aiohttp.typedefs import LooseCookies, LooseHeaders, StrOrURL
@@ -146,6 +147,7 @@ class AioHttpRequestOptions(TypedDict):
     ssl: NotRequired[SSLOptions]
     proxy_headers: NotRequired[LooseHeaders | None]
     middlewares: NotRequired[Sequence[ClientMiddlewareType]]
+    timeout: NotRequired[ClientTimeout | _SENTINEL | None]
 
 
 class AioHttpSessionOptions(TypedDict):
@@ -157,3 +159,4 @@ class AioHttpSessionOptions(TypedDict):
     middlewares: NotRequired[Sequence[ClientMiddlewareType]]
     proxy: NotRequired[StrOrURL | None]
     proxy_auth: NotRequired[BasicAuth | None]
+    timeout: NotRequired[ClientTimeout | _SENTINEL | None]

@@ -7,7 +7,7 @@ from typing import (
 from contextlib import asynccontextmanager
 import datetime
 
-from aiohttp import ClientSession, BasicAuth, ClientResponse
+from aiohttp import ClientSession, ClientTimeout, BasicAuth, ClientResponse
 from yarl import URL
 
 from .types import (
@@ -16,6 +16,7 @@ from .types import (
 
 DEFAULT_REQUEST_OPTIONS: AioHttpRequestOptions = {
     "ssl": False,
+    "timeout": ClientTimeout(total=10),
 }
 
 DEFAULT_SESSION_OPTIONS: AioHttpSessionOptions = {}
