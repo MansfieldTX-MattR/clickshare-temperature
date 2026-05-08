@@ -35,10 +35,11 @@ def click_secho(
     nl: bool = True,
     err: bool = False,
     color: bool|None = None,
-    fg: ClickColor|None = None
+    fg: ClickColor|None = None,
+    **styles
 ) -> None:
     """Wrapper around click.secho with a typed color argument"""
-    click.secho(msg, nl=nl, err=err, color=color, fg=fg)
+    click.secho(msg, nl=nl, err=err, color=color, fg=fg, **styles)
 
 
 def get_output_file_for_baseunit(base_dir: Path, room_name: str, hostname: str, output_format: OutputFormat) -> Path:
