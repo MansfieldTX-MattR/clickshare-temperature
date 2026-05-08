@@ -7,6 +7,7 @@ import json
 from dotenv import load_dotenv
 from aiohttp import ClientSession
 import click
+import click_extra
 
 from clickshare_temperature.types import AuthInfo
 
@@ -20,6 +21,7 @@ from .temperature_history import TemperatureHistory
 from .log_archive import LogArchive
 from .types import AioHttpRequestOptions, AioHttpSessionOptions
 from .utils import ClickColor, click_secho, get_output_file_for_baseunit
+from .click_extra_params import get_extra_params
 
 
 influxdb_cli: None|click.Group
@@ -38,29 +40,72 @@ type AppendFromFormat = Literal["str", "json"]
 
 
 
+auth_option_group = click_extra.option_group(
+    "Authentication Options",
+    click_extra.option(
+        "--username", "-u",
+        envvar="CLICKSHARE_BASEUNIT_USERNAME",
+        type=str,
+        required=True,
+        prompt=True,
+        help="Username for BaseUnit API authentication.",
+    ),
+    click_extra.option(
+        "--password", "-p",
+        envvar="CLICKSHARE_BASEUNIT_PASSWORD",
+        type=str,
+        required=True,
+        prompt=True,
+        hide_input=True,
+        help="Password for BaseUnit API authentication.",
+    ),
+)
 
-@click.group()
+output_option_group = click_extra.option_group(
+    "Output Options",
+    click_extra.option(
+        "--output-format", "-f",
+        type=click.Choice(["str", "json", "current"], case_sensitive=False),
+        default="str",
+        help="Output format. Can be either 'str', 'json', or 'current'. Default is 'str'." \
+        "If 'current' is specified, only the most recent reading for each sensor will be outputted.",
+    ),
+    click_extra.option(
+        "--output-file", "-o",
+        type=click.Path(dir_okay=False, path_type=Path),
+        help="Path to output file. If not provided, the output will be printed to stdout.",
+    ),
+)
+
+input_option_group = click_extra.option_group(
+    "Input Options",
+    click_extra.option(
+        "--append-from", "-a",
+        type=click.Path(exists=True, dir_okay=False, path_type=Path),
+        help="Path to a log archive file to append readings from. " \
+        "If provided, the readings from the downloaded logs will be appended to the readings from this file, and the combined readings will be outputted.",
+    ),
+    click_extra.option(
+        "--append-from-format", "-A",
+        type=click.Choice(["str", "json"], case_sensitive=False),
+        default="str",
+        help="Format of the file provided to --append-from. Can be either 'str' or 'json'. Default is 'str'. Ignored if --append-from is not provided.",
+    ),
+)
+
+
+
+@click_extra.group(params=get_extra_params())
 def cli():
     """CLI for working with ClickShare BaseUnit temperature logs."""
     pass
 
 @cli.command(name="parse")
-@click.argument(
+@click_extra.argument(
     "input_file",
     type=click.Path(exists=True, dir_okay=False, path_type=Path),
 )
-@click.option(
-    "--output-format", "-f",
-    type=click.Choice(["str", "json", "current"], case_sensitive=False),
-    default="str",
-    help="Output format. Can be either 'str', 'json', or 'current'. Default is 'str'." \
-    "If 'current' is specified, only the most recent reading for each sensor will be outputted.",
-)
-@click.option(
-    "--output-file", "-o",
-    type=click.Path(dir_okay=False, path_type=Path),
-    help="Path to output file. If not provided, the output will be printed to stdout.",
-)
+@output_option_group
 def cli_parse(input_file: Path, output_format: OutputFormat, output_file: Path|None):
     """Parse a log archive and extract temperature readings."""
     parse(input_file, output_format, output_file)
@@ -82,57 +127,19 @@ def parse(input_file: Path, output_format: OutputFormat, output_file: Path|None)
 
 
 @cli.command(name="download")
-@click.argument(
+@click_extra.argument(
     "baseunit_ip",
     type=str,
 )
-@click.option(
-    "--username", "-u",
-    envvar="CLICKSHARE_BASEUNIT_USERNAME",
-    type=str,
-    required=True,
-    prompt=True,
-    help="Username for BaseUnit API authentication.",
-)
-@click.option(
-    "--password", "-p",
-    envvar="CLICKSHARE_BASEUNIT_PASSWORD",
-    type=str,
-    required=True,
-    prompt=True,
-    hide_input=True,
-    help="Password for BaseUnit API authentication.",
-)
-@click.option(
-    "--append-from", "-a",
-    type=click.Path(exists=True, dir_okay=False, path_type=Path),
-    help="Path to a log archive file to append readings from. " \
-    "If provided, the readings from the downloaded logs will be appended to the readings from this file, and the combined readings will be outputted.",
-)
-@click.option(
-    "--append-from-format", "-A",
-    type=click.Choice(["str", "json"], case_sensitive=False),
-    default="str",
-    help="Format of the file provided to --append-from. Can be either 'str' or 'json'. Default is 'str'. Ignored if --append-from is not provided.",
-)
-@click.option(
-    "--output-format", "-f",
-    type=click.Choice(["str", "json", "current"], case_sensitive=False),
-    default="str",
-    help="Output format. Can be either 'str', 'json', or 'current'. Default is 'str'." \
-    "If 'current' is specified, only the most recent reading for each sensor will be outputted.",
-)
-@click.option(
-    "--output-file", "-o",
-    type=click.Path(dir_okay=False, path_type=Path),
-    help="Path to output file. If not provided, the output will be printed to stdout.",
-)
-@click.option(
+@auth_option_group
+@input_option_group
+@output_option_group
+@click_extra.option(
     "--upload-influx",
     is_flag=True,
     help="If set, the historical temperature data will be uploaded to InfluxDB using the Prometheus Remote Write API after it is downloaded and parsed.",
 )
-@click.option(
+@click_extra.option(
     "--raw-logs",
     is_flag=True,
     help="If set, the raw log archive will be downloaded and saved to the specified output file instead of " \
@@ -183,62 +190,20 @@ def cli_download(
 
 
 @cli.command(name="download-multiple")
-@click.argument(
+@click_extra.argument(
     "baseunit_ip_file",
     type=click.Path(exists=True, dir_okay=False, path_type=Path),
     # help="Path to a text file containing a list of BaseUnit IP addresses, one per line.",
 )
-@click.option(
-    "--username", "-u",
-    envvar="CLICKSHARE_BASEUNIT_USERNAME",
-    type=str,
-    required=True,
-    prompt=True,
-    help="Username for BaseUnit API authentication.",
-)
-@click.option(
-    "--password", "-p",
-    envvar="CLICKSHARE_BASEUNIT_PASSWORD",
-    type=str,
-    required=True,
-    prompt=True,
-    hide_input=True,
-    help="Password for BaseUnit API authentication.",
-)
-@click.option(
-    "--append-from", "-a",
-    type=click.Path(exists=True, dir_okay=True, path_type=Path),
-    required=True,
-    help="Path to a directory containing log archive files to append readings from. " \
-    "For each BaseUnit IP address, the file in this directory with the hostname of the BaseUnit will be used to append readings. " \
-    "If provided, the readings from the downloaded logs will be appended to the readings from these files, and the combined readings will be outputted.",
-)
-@click.option(
-    "--append-from-format", "-A",
-    type=click.Choice(["str", "json"], case_sensitive=False),
-    default="str",
-    help="Format of the file provided to --append-from. Can be either 'str' or 'json'. Default is 'str'. Ignored if --append-from is not provided.",
-)
-@click.option(
-    "--output-format", "-f",
-    type=click.Choice(["str", "json", "current"], case_sensitive=False),
-    default="str",
-    help="Output format. Can be either 'str', 'json', or 'current'. Default is 'str'." \
-    "If 'current' is specified, only the most recent reading for each sensor will be outputted.",
-)
-@click.option(
-    "--output-dir", "-o",
-    type=click.Path(file_okay=False, dir_okay=True, path_type=Path),
-    required=True,
-    help="Path to output directory. For each BaseUnit IP address, " \
-    "a file will be created in this directory with the hostname of the BaseUnit containing the output for that BaseUnit.",
-)
-@click.option(
+@auth_option_group
+@input_option_group
+@output_option_group
+@click_extra.option(
     "--upload-influx",
     is_flag=True,
     help="If set, the historical temperature data will be uploaded to InfluxDB using the Prometheus Remote Write API after it is downloaded and parsed.",
 )
-@click.option(
+@click_extra.option(
     "--raw-logs",
     is_flag=True,
     help="If set, the raw log archive will be downloaded and saved to the specified output file instead of " \
