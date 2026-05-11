@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import NamedTuple, TypedDict
+from typing import NamedTuple, TypedDict, Iterable
 import datetime
 import os
 from pathlib import Path
@@ -10,7 +10,8 @@ from influxdb_client_3 import InfluxDBClient3, Point, WritePrecision
 import click
 
 from .temperature_history import SensorReading, TemperatureHistory
-from .types import BaseUnitInfo, SensorType
+from .baseunit_api import PowerModeStatus
+from .types import BaseUnitInfo, BaseUnitStatus, BaseUnitUsageStatus, SensorType
 from .utils import click_secho, get_baseunit_from_filename, get_app_dir
 
 
@@ -186,6 +187,73 @@ def backfill_readings(base_unit: BaseUnitInfo, temperature_history: TemperatureH
 
         return len(points)
 
+
+def baseunit_status_to_point(
+    status: BaseUnitStatus|BaseUnitUsageStatus,
+    timestamp: datetime.datetime
+) -> Point:
+    """Convert a :class:`.BaseUnitStatus` or :class:`.BaseUnitUsageStatus`
+    object to an InfluxDB `Point` object for uploading to InfluxDB
+    """
+    assert timestamp.tzinfo is not None, "Timestamp must be timezone-aware"
+    m_name = "baseunit_status" if isinstance(status, BaseUnitStatus) else "baseunit_usage_status"
+    p = Point(m_name) \
+        .tag("device_id", status.base_unit.hostname) \
+        .tag("room_name", status.base_unit.room_name) \
+        .field("in_use", status.in_use) \
+        .field("sharing", status.sharing) \
+        .time(timestamp, WritePrecision.NS)
+    if isinstance(status, BaseUnitStatus):
+        p = p.field("current_uptime_seconds", int(status.current_uptime.total_seconds())) \
+            .field("total_uptime_seconds", int(status.total_uptime.total_seconds())) \
+            .field("error_code", status.error_code) \
+            .field("error_message", status.error_message or "") \
+            .field("first_used_timestamp", int(status.first_used.timestamp()))
+    return p
+
+
+def power_management_status_to_point(
+    base_unit: BaseUnitInfo,
+    mode: PowerModeStatus,
+    timestamp: datetime.datetime
+) -> Point:
+    """Convert a :class:`.PowerManagementStatus` object to an InfluxDB `Point` object for
+    uploading to InfluxDB
+    """
+    assert timestamp.tzinfo is not None, "Timestamp must be timezone-aware"
+    p = Point("power_management_status") \
+        .tag("device_id", base_unit.hostname) \
+        .tag("room_name", base_unit.room_name) \
+        .field("power_mode", mode) \
+        .time(timestamp, WritePrecision.NS)
+    return p
+
+
+def upload_baseunit_status(
+    statuses: Iterable[tuple[BaseUnitStatus|BaseUnitUsageStatus, datetime.datetime]]
+) -> None:
+    """Upload one or more :class:`.BaseUnitStatus` or :class:`.BaseUnitUsageStatus`
+    objects to InfluxDB
+    """
+    with InfluxDBClient3(host=INFLUX_URL, token=INFLUX_TOKEN, org=INFLUX_ORG) as client:
+        points = [
+            baseunit_status_to_point(status, timestamp)
+            for status, timestamp in statuses
+        ]
+        client.write(database=INFLUX_BUCKET, record=points)
+
+
+def upload_power_management_statuses(
+    statuses: Iterable[tuple[BaseUnitInfo, PowerModeStatus, datetime.datetime]]
+) -> None:
+    """Upload one or more :class:`.PowerManagementStatus` objects to InfluxDB
+    """
+    with InfluxDBClient3(host=INFLUX_URL, token=INFLUX_TOKEN, org=INFLUX_ORG) as client:
+        points = [
+            power_management_status_to_point(base_unit, mode, timestamp)
+            for base_unit, mode, timestamp in statuses
+        ]
+        client.write(database=INFLUX_BUCKET, record=points)
 
 
 def load_temperature_history_from_file(filepath: Path) -> TemperatureHistory:
