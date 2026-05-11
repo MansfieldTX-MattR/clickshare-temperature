@@ -101,18 +101,25 @@ class BaseUnitIdentity(NamedTuple):
 
 type BaseUnitStatusErrorCode = Literal["Ok", "Warning", "Error"]
 
-class BaseUnitStatusSerializeTD(TypedDict):
-    """TypedDict for serializing BaseUnitStatus to JSON"""
+
+class BaseUnitUsageStatusSerializeTD(TypedDict):
+    """TypedDict for serializing :class:`BaseUnitUsageStatus` to JSON"""
     base_unit: BaseUnitInfoSerializeTD
+    in_use: bool
+    sharing: bool
+
+class BaseUnitStatusSerializeTD(BaseUnitUsageStatusSerializeTD):
+    """TypedDict for serializing :class:`BaseUnitStatus` to JSON"""
     current_uptime_seconds: int
     total_uptime_seconds: int
     error_code: BaseUnitStatusErrorCode
     error_message: str | None
     first_used: str
-    in_use: bool
-    sharing: bool
+
 
 class BaseUnitStatus(NamedTuple):
+    """Status information about a ClickShare BaseUnit
+    """
     base_unit: BaseUnitInfo
     """The BaseUnit this status is for"""
     current_uptime: datetime.timedelta
@@ -170,6 +177,34 @@ class BaseUnitStatus(NamedTuple):
             first_used=self.first_used.astimezone(tz),
             in_use=self.in_use,
             sharing=self.sharing,
+        )
+
+
+class BaseUnitUsageStatus(NamedTuple):
+    """Smaller version of :class:`BaseUnitStatus` that only includes usage information
+    """
+    base_unit: BaseUnitInfo
+    """The BaseUnit this status is for"""
+    in_use: bool
+    """Whether the BaseUnit is currently in use"""
+    sharing: bool
+    """Whether the BaseUnit is currently sharing"""
+
+    def serialize(self) -> BaseUnitUsageStatusSerializeTD:
+        """Serialize the :class:`BaseUnitUsageStatus` to a dictionary for JSON serialization"""
+        return BaseUnitUsageStatusSerializeTD(
+            base_unit=self.base_unit.serialize(),
+            in_use=self.in_use,
+            sharing=self.sharing,
+        )
+
+    @classmethod
+    def deserialize(cls, data: BaseUnitUsageStatusSerializeTD) -> BaseUnitUsageStatus:
+        """Deserialize a dictionary into a :class:`BaseUnitUsageStatus` object"""
+        return cls(
+            base_unit=BaseUnitInfo.deserialize(data["base_unit"]),
+            in_use=data["in_use"],
+            sharing=data["sharing"],
         )
 
 
