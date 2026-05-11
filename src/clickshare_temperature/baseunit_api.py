@@ -182,14 +182,13 @@ async def get_baseunit_identity(
         session_options=session_options,
         **request_options,
     ) as response:
-        data = await response.json()
-        info = BaseUnitIdentityResponse(**data)
+        data: BaseUnitIdentityResponse = await response.json()
         return BaseUnitIdentity(
-            article_number=info["articleNumber"],
-            hardware_version=info["hardwareVersion"],
-            model_name=info["modelName"],
-            product_name=info["productName"],
-            serial_number=info["serialNumber"],
+            article_number=data["articleNumber"],
+            hardware_version=data["hardwareVersion"],
+            model_name=data["modelName"],
+            product_name=data["productName"],
+            serial_number=data["serialNumber"],
         )
 
 
@@ -235,7 +234,7 @@ async def get_power_management_info(
         session_options=session_options,
         **request_options,
     ) as response:
-        data = await response.json()
+        data: PowerManagementResponse = await response.json()
         return PowerManagementResponse(**data)
 
 
@@ -274,9 +273,8 @@ async def get_baseunit_status(
         session_options=session_options,
         **request_options,
     ) as response:
-        data = await response.json()
-        info = BaseUnitStatusResponse(**data)
-        first_used = datetime.datetime.fromisoformat(info["firstUsed"])
+        data: BaseUnitStatusResponse = await response.json()
+        first_used = datetime.datetime.fromisoformat(data["firstUsed"])
         if not timezone.is_aware(first_used):
             tz = timezone.get_local_timezone()
             if tz is timezone.NotFound:
@@ -290,13 +288,13 @@ async def get_baseunit_status(
                 session_options=session_options,
                 **request_options,
             ),
-            current_uptime=datetime.timedelta(seconds=info["currentUptime"]),
-            total_uptime=datetime.timedelta(seconds=info["totalUptime"]),
-            error_code=info["errorCode"],
-            error_message=None if not len(info["errorMessage"].strip()) else info["errorMessage"],
+            current_uptime=datetime.timedelta(seconds=data["currentUptime"]),
+            total_uptime=datetime.timedelta(seconds=data["totalUptime"]),
+            error_code=data["errorCode"],
+            error_message=None if not len(data["errorMessage"].strip()) else data["errorMessage"],
             first_used=first_used,
-            in_use=info["inUse"],
-            sharing=info["sharing"],
+            in_use=data["inUse"],
+            sharing=data["sharing"],
         )
 
 
