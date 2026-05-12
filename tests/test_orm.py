@@ -114,10 +114,9 @@ def sample_sensor_reading_model(
     sample_base_unit_model: BaseUnitModel,
     db_session
 ) -> SensorReadingModel:
-    reading_model, created = SensorReadingModel.from_data(
+    reading_model = SensorReadingModel.from_data(
         sample_base_unit_model, sample_sensor_reading, db_session
     )
-    assert created
     db_session.add(reading_model)
     db_session.commit()
     return reading_model
@@ -130,8 +129,7 @@ def sample_sensor_history_models(
 ) -> list[SensorReadingModel]:
     models = []
     for reading in sample_temperature_history.readings:
-        model, created = SensorReadingModel.from_data(sample_base_unit_model, reading, db_session)
-        assert created
+        model = SensorReadingModel.from_data(sample_base_unit_model, reading, db_session)
         db_session.add(model)
         models.append(model)
     db_session.commit()
@@ -454,8 +452,7 @@ def test_sensor_reading_from_data(
     db_session.add(base_unit)
     db_session.commit()
 
-    reading_model, created = SensorReadingModel.from_data(base_unit, sample_sensor_reading, db_session)
-    assert created
+    reading_model = SensorReadingModel.from_data(base_unit, sample_sensor_reading, db_session)
     db_session.add(reading_model)
     db_session.commit()
 

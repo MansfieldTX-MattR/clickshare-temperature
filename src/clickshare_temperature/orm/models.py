@@ -305,10 +305,9 @@ class BaseUnit(Base[BaseUnitNaturalKey, _BaseUnitSerializeTD]):
 
     def add_sensor_reading(self, reading: SensorReadingData, session: Session) -> tuple[SensorReading, bool]:
         """Add a :class:`SensorReading` to this BaseUnit."""
-        sensor_reading, created = SensorReading.from_data(self, reading, session)
-        if created:
-            session.add(sensor_reading)
-        return sensor_reading, created
+        sensor_reading = SensorReading.from_data(self, reading, session)
+        session.add(sensor_reading)
+        return sensor_reading, True
 
     def has_sensor_reading(self, reading: SensorReadingData, session: Session) -> bool:
         """Check if a :class:`SensorReading` already exists for this BaseUnit
@@ -1001,7 +1000,7 @@ class SensorReading(Base[SensorReadingNaturalKey, _SensorReadingSerializeTD]):
         return session.query(SensorReading).filter_by(sensor_type=sensor_type)
 
     @classmethod
-    def from_data(cls, base_unit: BaseUnit|BaseUnitInfo|int, reading: SensorReadingData, session: Session) -> tuple[Self, bool]:
+    def from_data(cls, base_unit: BaseUnit|BaseUnitInfo|int, reading: SensorReadingData, session: Session) -> Self:
         """Create an instance of this model from a :class:`.types.SensorReading` instance
         """
         if isinstance(base_unit, BaseUnitInfo):
@@ -1013,7 +1012,7 @@ class SensorReading(Base[SensorReadingNaturalKey, _SensorReadingSerializeTD]):
             timestamp=ensure_aware(reading.timestamp),
             sensor_type=reading.sensor,
             value=reading.value,
-        ), True
+        )
 
     def to_data(self) -> SensorReadingData:
         """Convert this instance to a :class:`.types.SensorReading` instance
