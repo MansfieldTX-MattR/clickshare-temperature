@@ -44,6 +44,8 @@ def uninitialized_db(tmp_path):
     db_file = tmp_path / "test.db"
     set_engine_uri(f"sqlite:///{db_file}")
     yield
+    if engine_module.EngineBuilder.ENGINE is not None:
+        engine_module.EngineBuilder.ENGINE.dispose()
     engine_module.EngineBuilder._Session = None
     engine_module.ENGINE_URI = None
     engine_module.EngineBuilder.ENGINE = None
