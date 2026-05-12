@@ -27,8 +27,11 @@ from .click_extra_params import get_extra_params
 orm_cli: None|click_extra.Group|Callable
 try:
     from .orm.cli import cli as orm_cli
-except ImportError:
-    orm_cli = None
+except ModuleNotFoundError as exc:
+    if exc.name in {"sqlalchemy", "sqlalchemy_utc"}:
+        orm_cli = None
+    else:
+        raise
 
 influxdb_cli: None|click.Group
 try:
