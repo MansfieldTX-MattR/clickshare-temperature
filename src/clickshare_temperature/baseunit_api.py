@@ -15,6 +15,10 @@ from .types import (
     BaseUnitIdentity,
     BaseUnitStatus,
     AuthInfo,
+    PowerModeStatus,
+    PowerMode,
+    PowerStandbyTimeout,
+    PowerManagementInfo,
     AioHttpSessionOptions,
     AioHttpRequestOptions,
     BaseUnitStatusErrorCode,
@@ -192,25 +196,19 @@ async def get_baseunit_identity(
         )
 
 
-type PowerModeStatus = Literal["On", "Standby"]
-"""Power mode status of the BaseUnit, either "On" or "Standby" """
-
-type PowerMode = Literal["EcoStandby", "NetworkedStandby", "DeepStandby"]
-"""Power mode of the BaseUnit, either "EcoStandby", "NetworkedStandby", or "DeepStandby" """
-
 
 class PowerManagementResponse(TypedDict):
     """Response for the power management API endpoint
     """
     powerMode: PowerMode
     """Current power mode of the BaseUnit (e.g. "EcoStandby")"""
-    standbyTimeout: str
+    standbyTimeout: PowerStandbyTimeout
     """Current standby timeout of the BaseUnit"""
     status: PowerModeStatus
     """Current power status of the BaseUnit (e.g. "On")"""
     supportedPowerModes: list[PowerMode]
     """List of supported power modes"""
-    supportedStandbyTimeouts: list[str]
+    supportedStandbyTimeouts: list[PowerStandbyTimeout]
     """List of supported standby timeouts"""
     supportedStatuses: list[PowerModeStatus]
     """List of supported power statuses"""
@@ -223,7 +221,7 @@ async def get_power_management_info(
     session: ClientSession|None = None,
     session_options: AioHttpSessionOptions|None = None,
     **request_options: Unpack[AioHttpRequestOptions],
-) -> PowerManagementResponse:
+) -> PowerManagementInfo:
     """Get the power management information for the BaseUnit at the given IP address
     """
     async with api_request(
@@ -235,7 +233,16 @@ async def get_power_management_info(
         **request_options,
     ) as response:
         data: PowerManagementResponse = await response.json()
-        return PowerManagementResponse(**data)
+        timeout = PowerManagementInfo.parse_standby_timeout(data["standbyTimeout"])
+        return PowerManagementInfo(
+            power_mode=data["powerMode"],
+            standby_timeout_string=data["standbyTimeout"],
+            standby_timeout_minutes=timeout,
+            status=data["status"],
+            supported_power_modes=data["supportedPowerModes"],
+            supported_standby_timeouts=data["supportedStandbyTimeouts"],
+            supported_statuses=data["supportedStatuses"],
+        )
 
 
 class BaseUnitStatusResponse(TypedDict):

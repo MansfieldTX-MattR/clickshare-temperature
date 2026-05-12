@@ -10,8 +10,10 @@ from influxdb_client_3 import InfluxDBClient3, Point, WritePrecision
 import click
 
 from .temperature_history import SensorReading, TemperatureHistory
-from .baseunit_api import PowerModeStatus
-from .types import BaseUnitInfo, BaseUnitStatus, BaseUnitUsageStatus, SensorType
+from .types import (
+    BaseUnitInfo, BaseUnitStatus, BaseUnitUsageStatus, SensorType,
+    PowerModeStatus,
+)
 from .utils import click_secho, get_baseunit_from_filename, get_app_dir
 
 
