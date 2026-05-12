@@ -270,10 +270,9 @@ class BaseUnit(Base[BaseUnitNaturalKey, _BaseUnitSerializeTD]):
             key = (timezone.ensure_aware(reading.timestamp), reading.sensor)
             if key in existing_keys:
                 continue
-            instance, created = self.add_sensor_reading(reading, session)
-            if created:
-                session.add(instance)
-                num_added += 1
+            instance = self.add_sensor_reading(reading, session)
+            session.add(instance)
+            num_added += 1
         click_secho(f"Added {num_added} sensor readings for BaseUnit '{self.hostname}' to the database", fg="green")
 
     def add_sensor_readings(self, readings: list[SensorReadingData], session: Session) -> tuple[int, int]:
@@ -296,18 +295,17 @@ class BaseUnit(Base[BaseUnitNaturalKey, _BaseUnitSerializeTD]):
             if key in existing_keys:
                 num_skipped += 1
                 continue
-            instance, created = self.add_sensor_reading(reading, session)
+            instance = self.add_sensor_reading(reading, session)
             assert not instance.uploaded_to_influx, "New sensor reading should not be marked as uploaded to InfluxDB"
-            if created:
-                session.add(instance)
-                num_added += 1
+            session.add(instance)
+            num_added += 1
         return num_added, num_skipped
 
-    def add_sensor_reading(self, reading: SensorReadingData, session: Session) -> tuple[SensorReading, bool]:
+    def add_sensor_reading(self, reading: SensorReadingData, session: Session) -> SensorReading:
         """Add a :class:`SensorReading` to this BaseUnit."""
         sensor_reading = SensorReading.from_data(self, reading, session)
         session.add(sensor_reading)
-        return sensor_reading, True
+        return sensor_reading
 
     def has_sensor_reading(self, reading: SensorReadingData, session: Session) -> bool:
         """Check if a :class:`SensorReading` already exists for this BaseUnit
