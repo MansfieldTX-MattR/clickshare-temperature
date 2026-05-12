@@ -256,7 +256,8 @@ def update_baseunit_info(db_url: str|None, username: str, password: str) -> None
                 session.add(identity_model)
                 changed = True
             else:
-                assert identity_model.to_data() == identity_info, "BaseUnit identity information should match between database and API"
+                if identity_model.to_data() != identity_info:
+                    raise ValueError(f"Identity mismatch for BaseUnit '{base_unit.hostname}'")
             click_secho(
                 f"Updated information for BaseUnit '{base_unit.hostname}'",
                 fg="green",
