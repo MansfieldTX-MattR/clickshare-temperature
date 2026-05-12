@@ -174,14 +174,19 @@ def reading_to_point(base_unit: BaseUnitInfo, reading: SensorReading) -> Point:
     return p
 
 
-def backfill_readings(base_unit: BaseUnitInfo, temperature_history: TemperatureHistory) -> int:
+def backfill_readings(
+    base_unit: BaseUnitInfo,
+    temperature_history: TemperatureHistory,
+    ignore_last_readings_info: bool = False
+) -> int:
     """Backfill sensor readings for a BaseUnit to InfluxDB, returning the number of points uploaded
     """
     last_readings_info = LastReadingsInfo.load()
     readings_to_upload = []
     for r in temperature_history.readings:
-        if last_readings_info.can_upload_reading(base_unit.hostname, r):
+        if ignore_last_readings_info or last_readings_info.can_upload_reading(base_unit.hostname, r):
             readings_to_upload.append(r)
+            last_readings_info = last_readings_info.update_with_reading(base_unit.hostname, r)
     if not len(readings_to_upload):
         return 0
     with InfluxDBClient3(host=INFLUX_URL, token=INFLUX_TOKEN, org=INFLUX_ORG) as client:
