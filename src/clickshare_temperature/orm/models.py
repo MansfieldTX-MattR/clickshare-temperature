@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import NewType, Union, Literal, Self, get_args
+from typing import NewType, Union, Literal, Self
 import datetime
 
 from aiohttp import ClientSession
@@ -1051,7 +1051,6 @@ type ModelTableName = Literal[
     "power_management_settings",
     "power_management_status"
 ]
-ModelTableNames: tuple[ModelTableName, ...] = get_args(ModelTableName)
 MODEL_CLASSES = (
     BaseUnit,
     BaseUnitIdentity,
@@ -1061,9 +1060,3 @@ MODEL_CLASSES = (
     BaseUnitUsageStatus,
     SensorReading,
 )
-_MODEL_CLASSES_BY_TABLE_NAME: dict[str, ModelClass] = {cls.__tablename__: cls for cls in MODEL_CLASSES}
-if not all(table_name in _MODEL_CLASSES_BY_TABLE_NAME for table_name in ModelTableNames):
-    raise ValueError("Model __tablename__ values do not match ModelTableNames")
-MODEL_CLASSES_BY_TABLE_NAME: dict[ModelTableName, ModelClass] = {
-    key: _MODEL_CLASSES_BY_TABLE_NAME[key] for key in ModelTableNames
-}

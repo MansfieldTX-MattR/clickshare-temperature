@@ -11,7 +11,6 @@ from .base import Base
 from .models import (
     MODEL_CLASSES,
     ModelInstance,
-    MODEL_CLASSES_BY_TABLE_NAME,
 )
 
 
@@ -35,10 +34,10 @@ def deserialize_all(
 ) -> list[FullySerializedModelTD]:
     """Deserialize an iterator of fully serialized model data and add the instances to the database session."""
     def deserialize_model(data: FullySerializedModelTD) -> tuple[ModelInstance|None, bool]:
-        model_class = MODEL_CLASSES_BY_TABLE_NAME.get(data["model"])
-        if model_class is not None:
-            obj, created = model_class.deserialize_fully(data, session=session)
-            return obj, created
+        for model_class in MODEL_CLASSES:
+            if model_class.__tablename__ == data["model"]:
+                obj, created = model_class.deserialize_fully(data, session=session)
+                return obj, created
         return None, False
 
     data = data.copy()  # Make a copy of the data list to modify
