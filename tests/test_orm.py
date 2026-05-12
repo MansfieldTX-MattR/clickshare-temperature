@@ -105,7 +105,11 @@ def sample_base_unit_usage_status_model(
     db_session
 ) -> WithTimeStamp[BaseUnitUsageStatusModel]:
     timestamp = datetime.datetime(2024, 1, 1, 12, 0, tzinfo=tzinfo)
-    usage_status = BaseUnitUsageStatusModel.from_data(sample_base_unit_model, sample_base_unit_usage_status)
+    usage_status = BaseUnitUsageStatusModel.from_data(
+        sample_base_unit_model,
+        sample_base_unit_usage_status,
+        now=timestamp,
+    )
     db_session.add(usage_status)
     db_session.commit()
     return usage_status, timestamp
