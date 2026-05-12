@@ -412,7 +412,7 @@ def update_statuses(db_url: str|None, username: str, password: str, usage_only: 
                 #     for base_unit in base_units
                 # ]
                 update_coros = [
-                    update_basunit_status(base_unit, auth_info, model_cls, session, aiohttp_session, request_options)
+                    update_baseunit_status(base_unit, auth_info, model_cls, session, aiohttp_session, request_options)
                     for base_unit in base_units
                 ]
                 statuses = await asyncio.gather(*update_coros)
@@ -424,33 +424,7 @@ def update_statuses(db_url: str|None, username: str, password: str, usage_only: 
 
 
 
-# @overload
-# async def update_basunit_status(
-#     base_unit: BaseUnit,
-#     auth_info: AuthInfo,
-#     usage_only: Literal[True],
-#     session: Session,
-#     aiohttp_session: ClientSession,
-#     request_options: AioHttpRequestOptions
-# ) -> BaseUnitUsageStatus|None: ...
-# @overload
-# async def update_basunit_status(
-#     base_unit: BaseUnit,
-#     auth_info: AuthInfo,
-#     usage_only: Literal[False],
-#     session: Session,
-#     aiohttp_session: ClientSession,
-#     request_options: AioHttpRequestOptions
-# ) -> BaseUnitStatus|None: ...
-# async def update_basunit_status(
-#     base_unit: BaseUnit,
-#     auth_info: AuthInfo,
-#     usage_only: bool,
-#     session: Session,
-#     aiohttp_session: ClientSession,
-#     request_options: AioHttpRequestOptions
-# ) -> BaseUnitStatus|BaseUnitUsageStatus|None:
-async def update_basunit_status[T: BaseUnitStatus|BaseUnitUsageStatus](
+async def update_baseunit_status[T: BaseUnitStatus|BaseUnitUsageStatus](
     base_unit: BaseUnit,
     auth_info: AuthInfo,
     model_cls: type[T],
@@ -530,7 +504,7 @@ def fetch_readings_bulk(
                 if baseunit_ips is not None:
                     base_unit_query = base_unit_query.filter(BaseUnit.ip_address.in_(baseunit_ips))
                 status_coros = [
-                    update_basunit_status(
+                    update_baseunit_status(
                         base_unit, auth_info, model_cls, orm_session,
                         aiohttp_session, request_options,
                     )
