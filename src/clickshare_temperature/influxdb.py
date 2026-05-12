@@ -159,6 +159,18 @@ class LastReadingsInfo(NamedTuple):
         )
 
 
+def reading_to_point(base_unit: BaseUnitInfo, reading: SensorReading) -> Point:
+    """Convert a :class:`.SensorReading` to an InfluxDB `Point` for uploading to InfluxDB
+    """
+    assert reading.timestamp.tzinfo is not None, "Reading timestamp must be timezone-aware"
+    p = Point("temperature") \
+        .tag("device_id", base_unit.hostname) \
+        .tag("room_name", base_unit.room_name) \
+        .tag("sensor", reading.sensor) \
+        .field("deg_c", reading.value) \
+        .time(reading.timestamp, WritePrecision.NS)
+    return p
+
 
 def backfill_readings(base_unit: BaseUnitInfo, temperature_history: TemperatureHistory) -> int:
     """Backfill sensor readings for a BaseUnit to InfluxDB, returning the number of points uploaded
@@ -171,17 +183,7 @@ def backfill_readings(base_unit: BaseUnitInfo, temperature_history: TemperatureH
     if not len(readings_to_upload):
         return 0
     with InfluxDBClient3(host=INFLUX_URL, token=INFLUX_TOKEN, org=INFLUX_ORG) as client:
-        points = []
-        for r in readings_to_upload:
-            p = Point("temperature") \
-                .tag("device_id", base_unit.hostname) \
-                .tag("room_name", base_unit.room_name) \
-                .tag("sensor", r.sensor) \
-                .field("deg_c", r.value) \
-                .time(r.timestamp, WritePrecision.NS)
-            points.append(p)
-            last_readings_info = last_readings_info.update_with_reading(base_unit.hostname, r)
-
+        points = [reading_to_point(base_unit, r) for r in readings_to_upload]
         client.write(database=INFLUX_BUCKET, record=points)
         last_readings_info.save()
 
