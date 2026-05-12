@@ -1,6 +1,6 @@
 from __future__ import annotations
 from typing import (
-    Literal, Sequence, NamedTuple, TypedDict, NotRequired,
+    Literal, Sequence, Self, NamedTuple, TypedDict, NotRequired,
     get_args, TYPE_CHECKING,
 )
 import datetime
@@ -48,7 +48,7 @@ class BaseUnitInfo(NamedTuple):
         }
 
     @classmethod
-    def deserialize(cls, data: BaseUnitInfoSerializeTD) -> BaseUnitInfo:
+    def deserialize(cls, data: BaseUnitInfoSerializeTD) -> Self:
         """Deserialize a dictionary into a :class:`BaseUnitInfo` object
         """
         return cls(
@@ -91,7 +91,7 @@ class BaseUnitIdentity(NamedTuple):
         }
 
     @classmethod
-    def deserialize(cls, data: BaseUnitIdentitySerializeTD) -> BaseUnitIdentity:
+    def deserialize(cls, data: BaseUnitIdentitySerializeTD) -> Self:
         """Deserialize a dictionary into a :class:`BaseUnitIdentity` object"""
         return cls(
             article_number=data["article_number"],
@@ -154,7 +154,7 @@ class BaseUnitStatus(NamedTuple):
         }
 
     @classmethod
-    def deserialize(cls, data: BaseUnitStatusSerializeTD) -> BaseUnitStatus:
+    def deserialize(cls, data: BaseUnitStatusSerializeTD) -> Self:
         """Deserialize a dictionary into a :class:`BaseUnitStatus` object"""
         return cls(
             base_unit=BaseUnitInfo.deserialize(data["base_unit"]),
@@ -167,11 +167,11 @@ class BaseUnitStatus(NamedTuple):
             sharing=data["sharing"],
         )
 
-    def as_timezone(self, tz: datetime.tzinfo) -> BaseUnitStatus:
+    def as_timezone(self, tz: datetime.tzinfo) -> Self:
         """Return a copy of this BaseUnitStatus with the first_used timestamp converted to the given timezone"""
         if self.first_used.tzinfo is None:
             raise ValueError("Cannot convert timezone of naive datetime")
-        return BaseUnitStatus(
+        return self.__class__(
             base_unit=self.base_unit,
             current_uptime=self.current_uptime,
             total_uptime=self.total_uptime,
@@ -202,7 +202,7 @@ class BaseUnitUsageStatus(NamedTuple):
         )
 
     @classmethod
-    def deserialize(cls, data: BaseUnitUsageStatusSerializeTD) -> BaseUnitUsageStatus:
+    def deserialize(cls, data: BaseUnitUsageStatusSerializeTD) -> Self:
         """Deserialize a dictionary into a :class:`BaseUnitUsageStatus` object"""
         return cls(
             base_unit=BaseUnitInfo.deserialize(data["base_unit"]),
@@ -280,7 +280,7 @@ class PowerManagementInfo(NamedTuple):
         )
 
     @classmethod
-    def deserialize(cls, data: PowerManagementInfoSerializeTD) -> PowerManagementInfo:
+    def deserialize(cls, data: PowerManagementInfoSerializeTD) -> Self:
         """Deserialize a dictionary into a :class:`PowerManagementInfo` object"""
         return cls(
             power_mode=data["power_mode"],
