@@ -3,6 +3,7 @@ from typing import Literal, TYPE_CHECKING
 from pathlib import Path
 
 import click
+from yarl import URL
 
 from .types import BaseUnitInfo
 if TYPE_CHECKING:
@@ -93,3 +94,12 @@ def get_app_name() -> str:
 def get_app_dir() -> Path:
     """Get the directory for storing application data."""
     return Path(click.get_app_dir(get_app_name()))
+
+
+def is_valid_ip_or_hostname(value: str) -> bool:
+    """Check if the given value is a valid IP address or hostname."""
+    try:
+        URL(f"http://{value}:1234/foo")
+        return True
+    except ValueError:
+        return False

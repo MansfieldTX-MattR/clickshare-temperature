@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Literal
+from typing import Literal, Callable
 import asyncio
 from pathlib import Path
 import json
@@ -23,6 +23,15 @@ from .types import AioHttpRequestOptions, AioHttpSessionOptions
 from .utils import ClickColor, click_secho, get_output_file_for_baseunit
 from .click_extra_params import get_extra_params
 
+
+orm_cli: None|click_extra.Group|Callable
+try:
+    from .orm.cli import cli as orm_cli
+except ModuleNotFoundError as exc:
+    if exc.name in {"sqlalchemy", "sqlalchemy_utc"}:
+        orm_cli = None
+    else:
+        raise
 
 influxdb_cli: None|click.Group
 try:
@@ -371,7 +380,10 @@ async def download(
     click.echo(output_str)
     return history, True
 
-
+if orm_cli is not None:
+    # Type ignore is needed here because the click_extra.group decorator's
+    # signature is not correctly recognized by type checkers.
+    cli.add_command(orm_cli)  # type: ignore[arg-type]
 if influxdb_cli is not None:
     cli.add_command(influxdb_cli)
 
