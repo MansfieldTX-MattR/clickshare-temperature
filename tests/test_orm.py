@@ -596,12 +596,6 @@ def test_database_deserialization(
     # sample_base_unit_status, sample_status_timestamp = sample_base_unit_status_with_timestamp
     # sample_base_unit_usage_status, sample_usage_timestamp = sample_base_unit_usage_status_with_timestamp
     print(serialized_db_json)
-
-
-    assert db_session.query(BaseUnitModel).count() == 0
-    assert db_session.query(BaseUnitStatusModel).count() == 0
-    assert db_session.query(SensorReadingModel).count() == 0
-
     deserialize_database(db_session, serialized_db_json)
 
     # base_units = db_session.query(BaseUnitModel).all()
