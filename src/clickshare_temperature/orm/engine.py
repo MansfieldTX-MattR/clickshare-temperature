@@ -1,4 +1,5 @@
 from __future__ import annotations
+import threading
 from typing import ClassVar, Protocol
 # import contextvars
 
@@ -37,29 +38,48 @@ def create_engine_uri(
         query=kwargs or {},
     )
 
-ENGINE_URI: SQLAlchemyURL|None = None
+
+ENGINE_URI: SQLAlchemyURL | None = None
+_ENGINE_URI_LOCK: threading.Lock = threading.Lock()
+
 
 def set_engine_uri(uri: str|SQLAlchemyURL) -> None:
     """Set the global engine URI for the application
 
     This should be called before any database operations are performed.
+
+    .. note::
+
+        This function protected by an internal lock to ensure thread safety.
+
     """
     global ENGINE_URI
     if not isinstance(uri, SQLAlchemyURL):
         uri = make_url(uri)
-    if ENGINE_URI is not None and ENGINE_URI != uri:
-        raise ValueError(f"Engine URI has already been set to '{ENGINE_URI}', cannot change to '{uri}'")
-    ENGINE_URI = uri
+    with _ENGINE_URI_LOCK:
+        if ENGINE_URI is not None and ENGINE_URI != uri:
+            raise ValueError(
+                f"Engine URI has already been set to '{ENGINE_URI}', "
+                f"cannot change to '{uri}'"
+            )
+        ENGINE_URI = uri
+
 
 def get_engine_uri() -> SQLAlchemyURL:
     """Get the global engine URI for the application
 
-    If the engine URI has not been set yet, it will be created with default parameters.
+    If the engine URI has not been set yet, it will be created with default
+    parameters.
+
+    .. note::
+
+        This function protected by an internal lock to ensure thread safety.
     """
     global ENGINE_URI
-    if ENGINE_URI is None:
-        ENGINE_URI = create_engine_uri()
-    return ENGINE_URI
+    with _ENGINE_URI_LOCK:
+        if ENGINE_URI is None:
+            ENGINE_URI = create_engine_uri()
+        return ENGINE_URI
 
 
 
