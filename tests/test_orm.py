@@ -3,11 +3,13 @@ from typing import NamedTuple
 import datetime
 from pathlib import Path
 
+from sqlalchemy.orm import close_all_sessions
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import OperationalError, IntegrityError
 
 from clickshare_temperature.orm import (
     set_engine_uri,
+    get_engine_uri,
     init_db,
     get_session,
     BaseUnit as BaseUnitModel,
@@ -35,6 +37,16 @@ from clickshare_temperature.types import (
 
 type WithTimeStamp[T] = tuple[T, datetime.datetime]
 
+
+def _reset_engine():
+    if engine_module.EngineBuilder.ENGINE is not None:
+        engine_module.EngineBuilder.ENGINE.dispose()
+    engine_module.EngineBuilder._Session = None
+    engine_module.ENGINE_URI = None
+    engine_module.EngineBuilder.ENGINE = None
+    close_all_sessions()
+
+
 @pytest.fixture(scope="module")
 def module_scoped_tmp_path(tmp_path_factory):
     return tmp_path_factory.mktemp("module_scope")
@@ -44,11 +56,7 @@ def uninitialized_db(tmp_path):
     db_file = tmp_path / "test.db"
     set_engine_uri(f"sqlite:///{db_file}")
     yield
-    if engine_module.EngineBuilder.ENGINE is not None:
-        engine_module.EngineBuilder.ENGINE.dispose()
-    engine_module.EngineBuilder._Session = None
-    engine_module.ENGINE_URI = None
-    engine_module.EngineBuilder.ENGINE = None
+    _reset_engine()
 
 # @pytest.fixture
 # def uninitialized_db_2(tmp_path):
@@ -174,6 +182,14 @@ def fully_populated_db_session(
     fully_populated_db_data: FullyPopulatedDBData,
     tzinfo: datetime.tzinfo,
 ) -> Session:
+    _populate_db_with_data(db_session, fully_populated_db_data)
+    return db_session
+
+
+def _populate_db_with_data(
+    db_session: Session,
+    fully_populated_db_data: FullyPopulatedDBData,
+) -> None:
     # sample_base_unit_info, sample_base_unit_status_with_timestamp, sample_base_unit_usage_status_with_timestamp, sample_temperature_history = fully_populated_db_data
     src_data = fully_populated_db_data
     sample_base_unit_status, sample_status_timestamp = src_data.base_unit_status
@@ -238,7 +254,7 @@ def fully_populated_db_session(
     #     assert created
     #     db_session.add(model)
     # db_session.commit()
-    return db_session
+
 
 # def test_fully_populated_db_session(
 #     fully_populated_db_session: Session,
@@ -538,16 +554,6 @@ def test_sensor_reading_round_trip(
         assert reading.as_timezone(tzinfo).serialize_str() == line_str
 
 
-def test_database_serialization(
-    serialized_db_json: str,
-    module_scoped_tmp_path: Path,
-    tzinfo: datetime.tzinfo
-) -> None:
-    json_file = module_scoped_tmp_path / f"{str(tzinfo)}" / "serialized_db.json"
-    json_file.parent.mkdir(parents=True, exist_ok=True)
-    with open(json_file, "w") as f:
-        f.write(serialized_db_json)
-    assert json_file.exists()
 
 
 def test_database_deserialization(
@@ -555,14 +561,35 @@ def test_database_deserialization(
     # fully_populated_db_session: Session,
     fully_populated_db_data: FullyPopulatedDBData,
     db_session: Session,
-    module_scoped_tmp_path: Path,
-    tzinfo: datetime.tzinfo,
+    tmp_path: Path,
 ) -> None:
-    json_file = module_scoped_tmp_path / f"{str(tzinfo)}" / "serialized_db.json"
-    print(f"Looking for serialized DB JSON file at: {json_file}")
-    assert json_file.exists()
-    with open(json_file, "r") as f:
-        serialized_db_json = f.read()
+
+    # Phase 1: Serialize the database with data, then reset the engine to simulate a fresh start
+    _populate_db_with_data(db_session, fully_populated_db_data)
+    db_session.commit()
+    serialized_db_json = serialize_database(db_session)
+    db_session.close()
+    _reset_engine()
+
+
+    # Phase 2: Initialize a new database and deserialize the data into it,
+    # then verify the data was correctly deserialized
+    db_file = tmp_path / "deserialized.db"
+    assert not db_file.exists()
+    new_uri = f"sqlite:///{db_file}"
+    set_engine_uri(new_uri)
+    assert str(get_engine_uri()) == str(new_uri)
+    init_db()
+    assert db_file.exists()
+    new_db_session = get_session()
+
+    assert new_db_session is not db_session
+    db_session = new_db_session
+
+    # Sanity check that the new database is empty before deserialization
+    assert db_session.query(BaseUnitModel).count() == 0
+    assert db_session.query(BaseUnitStatusModel).count() == 0
+    assert db_session.query(SensorReadingModel).count() == 0
 
     src_data = fully_populated_db_data
     # sample_base_unit_info, sample_base_unit_status_with_timestamp, sample_base_unit_usage_status_with_timestamp, sample_temperature_history = fully_populated_db_data
