@@ -445,8 +445,10 @@ def test_base_unit_add_multiple_sensor_readings(
     assert num_skipped == 0
     db_session.commit()
 
-    assert len(base_unit.sensor_readings) == len(sample_temperature_history.readings)
-    for reading_model, reading_data in zip(base_unit.sensor_readings, sample_temperature_history.readings):
+    persisted = sorted(base_unit.sensor_readings, key=lambda r: (r.timestamp, r.sensor_type))
+    expected = sorted(sample_temperature_history.readings, key=lambda r: (r.timestamp, r.sensor))
+    assert len(persisted) == len(expected)
+    for reading_model, reading_data in zip(persisted, expected, strict=True):
         assert reading_model.timestamp == reading_data.timestamp
         assert reading_model.sensor_type == reading_data.sensor
         assert reading_model.value == reading_data.value
@@ -470,8 +472,13 @@ def test_sensor_reading_round_trip(
     assert num_skipped == 0
     db_session.commit()
 
-    assert len(base_unit.sensor_readings) == len(temperature_history.readings)
-    for reading_model, reading_data, line_str in zip(base_unit.sensor_readings, temperature_history.readings, serialized_lines):
+    persisted = sorted(base_unit.sensor_readings, key=lambda r: (r.timestamp, r.sensor_type))
+    expected = sorted(
+        zip(temperature_history.readings, serialized_lines, strict=True),
+        key=lambda item: (item[0].timestamp, item[0].sensor),
+    )
+    assert len(persisted) == len(expected)
+    for reading_model, (reading_data, line_str) in zip(persisted, expected, strict=True):
         assert reading_model.timestamp == reading_data.timestamp
         assert reading_model.sensor_type == reading_data.sensor
         assert reading_model.value == reading_data.value
