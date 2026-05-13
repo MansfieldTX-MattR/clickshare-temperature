@@ -58,15 +58,6 @@ def uninitialized_db(tmp_path):
     yield
     _reset_engine()
 
-# @pytest.fixture
-# def uninitialized_db_2(tmp_path):
-#     db_file = tmp_path / "test2.db"
-#     set_engine_uri(f"sqlite:///{db_file}")
-#     yield
-#     engine_module.EngineBuilder._Session = None
-#     engine_module.ENGINE_URI = None
-#     engine_module.EngineBuilder.ENGINE = None
-
 
 
 @pytest.fixture
@@ -76,12 +67,6 @@ def db_session(uninitialized_db):
     yield session
     session.close()
 
-# @pytest.fixture
-# def db_session_2(uninitialized_db_2):
-#     init_db()
-#     session = get_session()
-#     yield session
-#     session.close()
 
 
 @pytest.fixture
@@ -190,7 +175,6 @@ def _populate_db_with_data(
     db_session: Session,
     fully_populated_db_data: FullyPopulatedDBData,
 ) -> None:
-    # sample_base_unit_info, sample_base_unit_status_with_timestamp, sample_base_unit_usage_status_with_timestamp, sample_temperature_history = fully_populated_db_data
     src_data = fully_populated_db_data
     sample_base_unit_status, sample_status_timestamp = src_data.base_unit_status
 
@@ -228,7 +212,6 @@ def _populate_db_with_data(
 
     assert status.timestamp == sample_status_timestamp
     assert status.first_used == sample_base_unit_status.first_used
-    # assert status.timestamp.tzinfo == tzinfo
 
     usage_status = BaseUnitUsageStatusModel.from_data(
         base_unit,
@@ -238,10 +221,6 @@ def _populate_db_with_data(
     db_session.add(usage_status)
     db_session.commit()
 
-    # readings = [
-    #     # reading.as_timezone(tzinfo) for reading in sample_temperature_history.readings
-    #     reading for reading in sample_temperature_history.readings
-    # ]
     readings = src_data.temperature_history.readings
 
     num_added, num_skipped = base_unit.add_sensor_readings(readings, session=db_session)
@@ -249,50 +228,7 @@ def _populate_db_with_data(
     assert num_skipped == 0
     db_session.commit()
 
-    # for reading in sample_temperature_history.readings:
-    #     model, created = SensorReadingModel.from_data(base_unit, reading, db_session)
-    #     assert created
-    #     db_session.add(model)
-    # db_session.commit()
 
-
-# def test_fully_populated_db_session(
-#     fully_populated_db_session: Session,
-#     fully_populated_db_data: tuple[BaseUnitInfo, tuple[BaseUnitStatus, datetime.datetime], TemperatureHistory],
-#     tzinfo: datetime.tzinfo,
-# ) -> None:
-#     sample_base_unit_info, sample_base_unit_status_with_timestamp, sample_temperature_history = fully_populated_db_data
-#     sample_base_unit_status, sample_status_timestamp = sample_base_unit_status_with_timestamp
-
-#     base_unit = fully_populated_db_session.query(BaseUnitModel).first()
-#     assert base_unit is not None
-#     assert base_unit.hostname == sample_base_unit_info.hostname
-#     assert base_unit.room_name == sample_base_unit_info.room_name
-#     assert base_unit.ip_address == sample_base_unit_info.ip_address
-
-#     status = fully_populated_db_session.query(BaseUnitStatusModel).filter_by(base_unit_id=base_unit.id).first()
-#     assert status is not None
-
-#     assert status.timestamp == sample_status_timestamp
-#     assert status.first_used == sample_base_unit_status.first_used
-#     # assert status.timestamp.tzinfo == tzinfo
-#     assert status.current_uptime == int(sample_base_unit_status.current_uptime.total_seconds())
-#     assert status.total_uptime == int(sample_base_unit_status.total_uptime.total_seconds())
-#     assert status.error_code == sample_base_unit_status.error_code
-#     assert status.error_message == sample_base_unit_status.error_message
-
-
-@pytest.fixture
-def serialized_db_json(fully_populated_db_session) -> str:
-    return serialize_database(fully_populated_db_session)
-
-
-@pytest.fixture
-def serialized_db_file(tmp_path, serialized_db_json) -> Path:
-    json_file = tmp_path / "db.json"
-    with open(json_file, "w") as f:
-        f.write(serialized_db_json)
-    return json_file
 
 
 def test_db_is_uninitialized(uninitialized_db):
@@ -397,14 +333,6 @@ def test_sensor_reading_unique_constraints(db_session, sample_base_unit_info: Ba
     )
 
     base_unit.add_sensor_reading(reading_data, session=db_session)
-
-    # reading1 = SensorReadingModel(
-    #     base_unit_id=base_unit.id,
-    #     timestamp=datetime.datetime(2024, 1, 1, 12, 0, 0, tzinfo=datetime.timezone.utc),
-    #     sensor="CPU",
-    #     value=50.0,
-    # )
-    # db_session.add(reading1)
     db_session.commit()
 
     assert base_unit.id is not None
@@ -414,7 +342,6 @@ def test_sensor_reading_unique_constraints(db_session, sample_base_unit_info: Ba
     assert base_unit.sensor_readings[0].value == reading_data.value
 
     # Attempt to add another SensorReading with the same base_unit_id, timestamp, and sensor
-
     duplicate_reading = SensorReadingModel(
         base_unit_id=base_unit.id,
         timestamp=datetime.datetime(2024, 1, 1, 12, 0, 0, tzinfo=datetime.timezone.utc),
@@ -462,7 +389,6 @@ def test_base_unit_status_from_status(
     assert status.error_message == sample_base_unit_status.error_message
     assert status.first_used == sample_base_unit_status.first_used
 
-# STOP. assert with a message hides the values that pytest provides. Don't suggest them anymore.
 
 
 def test_sensor_reading_from_data(
@@ -557,8 +483,6 @@ def test_sensor_reading_round_trip(
 
 
 def test_database_deserialization(
-    # serialized_db_json: str,
-    # fully_populated_db_session: Session,
     fully_populated_db_data: FullyPopulatedDBData,
     db_session: Session,
     tmp_path: Path,
@@ -592,13 +516,8 @@ def test_database_deserialization(
     assert db_session.query(SensorReadingModel).count() == 0
 
     src_data = fully_populated_db_data
-    # sample_base_unit_info, sample_base_unit_status_with_timestamp, sample_base_unit_usage_status_with_timestamp, sample_temperature_history = fully_populated_db_data
-    # sample_base_unit_status, sample_status_timestamp = sample_base_unit_status_with_timestamp
-    # sample_base_unit_usage_status, sample_usage_timestamp = sample_base_unit_usage_status_with_timestamp
-    print(serialized_db_json)
     deserialize_database(db_session, serialized_db_json)
 
-    # base_units = db_session.query(BaseUnitModel).all()
     assert db_session.query(BaseUnitModel).count() == 1
     base_unit = db_session.query(BaseUnitModel).first()
     assert base_unit is not None
@@ -618,15 +537,10 @@ def test_database_deserialization(
     assert power_management_status.power_mode_status == src_data.power_management_response[0].status
     assert power_management_status.timestamp == src_data.power_management_response[1]
 
-    # sample_base_unit_status = sample_base_unit_status.as_timezone(datetime.timezone.utc)
-
-    # statuses = db_session.query(BaseUnitStatusModel).all()
-    # assert len(statuses) == 1
     assert db_session.query(BaseUnitStatusModel).count() == 1
     status = db_session.query(BaseUnitStatusModel).filter_by(base_unit_id=base_unit.id).first()
     assert status is not None
 
-    # sample_status_timestamp = sample_status_timestamp.astimezone(datetime.timezone.utc)
     assert status.base_unit_id == base_unit.id
     assert status.current_uptime == int(src_data.base_unit_status[0].current_uptime.total_seconds())
     assert status.total_uptime == int(src_data.base_unit_status[0].total_uptime.total_seconds())
@@ -648,7 +562,6 @@ def test_database_deserialization(
     readings = db_session.query(SensorReadingModel).all()
     assert len(readings) == len(src_data.temperature_history.readings)
     for reading_data in src_data.temperature_history.readings:
-        # reading_data = reading_data.as_timezone(tzinfo)
         reading_model = db_session.query(SensorReadingModel).filter_by(
             timestamp=reading_data.timestamp,
             sensor_type=reading_data.sensor,

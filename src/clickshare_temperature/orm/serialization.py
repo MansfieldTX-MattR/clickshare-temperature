@@ -95,8 +95,6 @@ def deserialize_all(
             session.commit()
         else:
             raise ValueError("Could not deserialize all data, likely due to missing related models.")
-    # if need_commit:
-    #     session.commit()
     return incomplete
 
 

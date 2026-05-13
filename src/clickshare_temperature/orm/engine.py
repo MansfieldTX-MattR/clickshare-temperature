@@ -1,7 +1,6 @@
 from __future__ import annotations
 import threading
 from typing import ClassVar, Protocol
-# import contextvars
 
 from sqlalchemy import (
     Engine,
@@ -16,8 +15,6 @@ from sqlalchemy.orm import (
 )
 
 from .base import Base
-
-# session_context: contextvars.ContextVar[ORMSession] = contextvars.ContextVar("orm_session")
 
 
 class EngineBuilderProto(Protocol):
@@ -85,7 +82,7 @@ def get_engine_uri() -> SQLAlchemyURL:
 
 def _create_default_engine() -> Engine:
     uri = get_engine_uri()
-    return sa_create_engine(uri, echo=False)#, pool_size=10, max_overflow=20, pool_timeout=60)
+    return sa_create_engine(uri, echo=False)
 
 
 
@@ -116,9 +113,6 @@ class EngineBuilder:
         """
         return cls.builder_func()
 
-    # @classmethod
-    # def get_engine(cls) -> Engine:
-    #     return get_engine()
 
     @classmethod
     def create_engine(cls) -> Engine:
