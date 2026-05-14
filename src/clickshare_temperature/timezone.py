@@ -1,12 +1,16 @@
 from __future__ import annotations
 from typing import Literal
+import os
 import datetime
 from zoneinfo import ZoneInfo
 import time
 import enum
 
+from dotenv import load_dotenv
+
 UTC = datetime.timezone.utc
 LOCAL_TZ: datetime.tzinfo|NotFoundType|None = None
+LOCAL_TZ_ENV_VAR = "CLICKSHARE_LOCAL_TIMEZONE"
 
 
 class _Sentinel(enum.Enum):
@@ -41,6 +45,15 @@ def detect_local_timezone() -> datetime.tzinfo:
             "PDT": "US/Pacific",
         }
         return tz_map.get(tz_abbr)
+    load_dotenv()
+    local_tz_name = os.getenv(LOCAL_TZ_ENV_VAR)
+    if local_tz_name is not None:
+        try:
+            return ZoneInfo(local_tz_name)
+        except Exception as e:
+            raise TimezoneLookupError(
+                f"Failed to load local timezone from environment variable {LOCAL_TZ_ENV_VAR}='{local_tz_name}'"
+            ) from e
     try:
         tz_abbr = time.tzname[time.daylight]
         tz_name = expand_tz_abbr(tz_abbr)
