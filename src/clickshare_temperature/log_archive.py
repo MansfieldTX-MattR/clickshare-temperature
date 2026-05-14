@@ -350,7 +350,7 @@ class LogArchive:
                 is_gzipped = False
 
             if is_gzipped:
-                with gzip.open(p, "rt") as f:
+                with gzip.open(p, "rt", encoding="utf-8") as f:
                     log_content = f.read()
                     log_filename = tmpdir / p.stem
                     log_filename.write_text(log_content)
