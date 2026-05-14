@@ -70,20 +70,16 @@ class LogFile:
         """Parse the log file into a sequence of LogEntry objects."""
         if len(self.entries):
             raise ValueError("Log entries have already been parsed.")
-        with self.filename.open("r") as f:
-            for line in f:
-                line = line.strip()
-                if not line:
-                    continue
-                # try:
-                entry = LogEntry.from_log_line(line)
-                self.entries.append(entry)
-                entry_list = self.entries_by_timestamp.setdefault(entry.timestamp, [])
-                entry_list.append(entry)
-                # assert entry.timestamp not in self.entries_by_timestamp, f"Duplicate timestamp in log file {self.filename}: {entry.timestamp}"
-                # self.entries_by_timestamp[entry.timestamp] = entry
-                # except Exception as e:
-                #     print(f"Error parsing log line: {line}\n{e}")
+        content_bytes = self.filename.read_bytes()
+        content = content_bytes.decode("utf-8", errors="replace")
+        for line in content.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            entry = LogEntry.from_log_line(line)
+            self.entries.append(entry)
+            entry_list = self.entries_by_timestamp.setdefault(entry.timestamp, [])
+            entry_list.append(entry)
 
     def serialize(self) -> _LogFileSerializeTD:
         """Serialize the LogFile to a dictionary."""
