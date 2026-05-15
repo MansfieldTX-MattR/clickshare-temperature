@@ -1,18 +1,23 @@
 from __future__ import annotations
 import io
-from typing import Self, NamedTuple, TypedDict, Iterator, Unpack
+from typing import Self, NamedTuple, TypedDict, NotRequired, Iterator, Unpack
 from pathlib import Path
 import tarfile
 import gzip
 import tempfile
 from dataclasses import dataclass, field
 import datetime
+import re
 
 from .baseunit_api import download_logs
 from .types import AuthInfo, LogLevel, LogLevels, AioHttpRequestOptions, AioHttpSessionOptions
 
 
 UTC = datetime.timezone.utc
+
+LOG_LINE_PATTERN: re.Pattern[str] = re.compile(r"^(\S+) (\S+) (.*?):\s*(.*)$")
+PROCESS_PATTERN: re.Pattern[str] = re.compile(r"^(\S+?)(?:\[(\d*)\])?$")
+LEVEL_PREFIX_PATTERN: re.Pattern[str] = re.compile(r"^\[(\w+)\] (.+)$")
 
 # ENTRY_DT_FMT = "%Y-%m-%dT%H:%M:%S.%fZ"
 
@@ -180,32 +185,44 @@ class LogEntry(NamedTuple):
 
     @classmethod
     def from_log_line(cls, line: str) -> Self:
-        """Parse a log line into a LogEntry."""
-        def parse_log_level(line_after_hostname: str) -> tuple[LogLevel|None, str]:
-            if line_after_hostname.startswith("["):
-                try:
-                    level_str, message = line_after_hostname.split("] ", 1)
-                    level_str = level_str.lstrip("[").rstrip("]")
-                    if level_str in LogLevels:
-                        return level_str, message
-                except ValueError:
-                    return None, line_after_hostname
-            return None, line_after_hostname
-        # Example log line:
-        # 2024-06-01T12:34:56.123456-05:00 hostname process: [INFO] This is a log message
-        # For some entries, such as kernel events, the log level is not included:
-        # 2024-06-01T12:34:56.123456-05:00 hostname rsyslogd: [origin software="rsyslogd" swVersion="8.2102.0" x-pid="1234" x-info="https://www.rsyslog.com"] starting up
-        timestamp_str, rest = line.split(" ", 1)
+        """Parse a log line into a LogEntry
+        """
+        def log_level_or_none(level_str: str) -> LogLevel|None:
+            """Convert a log level string to a :type:`LogLevel` (a string literal type)
+            or return None if the string is not a valid log level.
+            """
+            if level_str in LogLevels:
+                return level_str
+            return None
+
+        match = LOG_LINE_PATTERN.match(line)
+        if not match:
+            raise ValueError(f"Invalid log line format: {line}")
+        timestamp_str, hostname, process_part, message_part = match.groups()
         timestamp = datetime.datetime.fromisoformat(timestamp_str)
-        hostname, rest = rest.split(" ", 1)
-        try:
-            process, rest = rest.split(":", 1)
-            process = process.strip()
-        except:
-            print(f"Error parsing log line (missing process): {timestamp_str=}, {hostname=}, {line=}")
-            raise
-        level, message = parse_log_level(rest)
-        return cls(timestamp=timestamp, hostname=hostname, process=process, level=level, message=message)
+        process = process_part
+        process_number_str = None
+        if process_part:
+            process_match = PROCESS_PATTERN.match(process_part)
+            if not process_match:
+                raise ValueError(f"Invalid process format in log line: {line}")
+            process = process_match.group(1)
+            process_number_str = process_match.group(2)
+        process_number = int(process_number_str) if process_number_str else None
+        level = None
+        message = message_part
+        level_match = LEVEL_PREFIX_PATTERN.match(message_part)
+        if level_match:
+            level_str, message = level_match.groups()
+            level = log_level_or_none(level_str)
+        return cls(
+            timestamp=timestamp,
+            hostname=hostname,
+            process=process,
+            level=level,
+            message=message,
+            process_number=process_number,
+        )
 
     def serialize(self) -> _LogEntrySerializeTD:
         """Serialize the LogEntry to a dictionary."""
