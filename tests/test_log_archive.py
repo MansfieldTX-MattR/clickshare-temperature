@@ -161,7 +161,7 @@ def log_entry_test_case(request: pytest.FixtureRequest) -> LogEntryTestCase:
     return request.param
 
 
-def test_log_entry_parsing(log_entry_test_case) -> None:
+def test_log_entry_parsing(log_entry_test_case: LogEntryTestCase) -> None:
     line, expected = log_entry_test_case
     assert LogEntry.from_log_line(line) == expected
 
