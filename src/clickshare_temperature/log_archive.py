@@ -166,6 +166,7 @@ class _LogEntrySerializeTD(TypedDict):
     process: str
     level: LogLevel|None
     message: str
+    process_number: NotRequired[int|None]
 
 
 class LogEntry(NamedTuple):
@@ -175,6 +176,7 @@ class LogEntry(NamedTuple):
     process: str
     level: LogLevel|None
     message: str
+    process_number: int|None = None
 
     @classmethod
     def from_log_line(cls, line: str) -> Self:
@@ -213,6 +215,7 @@ class LogEntry(NamedTuple):
             "process": self.process,
             "level": self.level,
             "message": self.message,
+            "process_number": self.process_number,
         }
 
     @classmethod
@@ -225,6 +228,7 @@ class LogEntry(NamedTuple):
             process=data["process"],
             level=data["level"],
             message=data["message"],
+            process_number=data.get("process_number"),
         )
 
     def serialize_str(self) -> str:
