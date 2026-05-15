@@ -6,6 +6,11 @@ import datetime
 import pytest
 
 from clickshare_temperature.log_archive import LogEntry, LogArchive
+from clickshare_temperature.temperature_history import (
+    SensorReading,
+    TemperatureHistory,
+)
+from clickshare_temperature.types import BaseUnitInfo
 
 
 DATA_ROOT = Path(__file__).parent / "data"
@@ -156,6 +161,26 @@ LOG_ENTRY_TEST_CASES: list[LogEntryTestCase] = [
     ),
 ]
 
+LOG_ENTRY_SENSOR_READINGS: list[SensorReading] = [
+    # "2026-05-12T16:06:27.434937-05:00 ClickShare-1234567890 NetworkManager: [INFO] [7f16c75976c0] Temperature of wlan0: 49",
+    SensorReading(
+        timestamp=datetime.datetime.fromisoformat(
+            "2026-05-12T16:06:27.434937-05:00"
+        ),
+        sensor="WLAN0",
+        value=49.0,
+    ),
+    # "2026-05-12T16:07:41.427927-05:00 ClickShare-1234567890 CentralStore: [INFO] [7f5a5e531f40] Sensor readout CPUTemperature = 38.8 C",
+    SensorReading(
+        timestamp=datetime.datetime.fromisoformat(
+            "2026-05-12T16:07:41.427927-05:00"
+        ),
+        sensor="CPU",
+        value=38.8,
+    ),
+]
+
+
 @pytest.fixture(params=LOG_ENTRY_TEST_CASES)
 def log_entry_test_case(request: pytest.FixtureRequest) -> LogEntryTestCase:
     return request.param
@@ -179,3 +204,13 @@ def test_log_archive_parsing() -> None:
     assert len(parsed_entries) == len(LOG_ENTRY_TEST_CASES)
     for parsed_entry, expected_case in zip(parsed_entries, LOG_ENTRY_TEST_CASES):
         assert parsed_entry == expected_case.expected
+
+
+def test_temperature_history_from_log_archive(sample_base_unit_info: BaseUnitInfo) -> None:
+    archive_bytes = LOG_ARCHIVE_FILE.read_bytes()
+    temperature_history = TemperatureHistory.from_archive_bytes(sample_base_unit_info, archive_bytes)
+
+    expected_readings = LOG_ENTRY_SENSOR_READINGS
+    assert len(temperature_history.readings) == len(expected_readings)
+    for reading, expected in zip(temperature_history.readings, expected_readings):
+        assert reading == expected
