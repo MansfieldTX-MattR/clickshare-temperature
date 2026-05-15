@@ -90,14 +90,13 @@ class TemperatureHistory:
         archive.parse_archive_file(archive_file)
         readings = []
         readings_by_timestamp: dict[datetime.datetime, dict[SensorType, SensorReading[SensorType]]] = {}
-        for log_file in archive.log_files:
-            for entry in log_file.entries:
-                reading = cls._parse_archive_entry(entry)
-                if reading is not None:
-                    readings.append(reading)
-                    if reading.timestamp not in readings_by_timestamp:
-                        readings_by_timestamp[reading.timestamp] = {}
-                    readings_by_timestamp[reading.timestamp][reading.sensor] = reading
+        for entry in archive.all_entries(unique=True):
+            reading = cls._parse_archive_entry(entry)
+            if reading is not None:
+                readings.append(reading)
+                if reading.timestamp not in readings_by_timestamp:
+                    readings_by_timestamp[reading.timestamp] = {}
+                readings_by_timestamp[reading.timestamp][reading.sensor] = reading
         return cls(base_unit=base_unit, readings=readings, readings_by_timestamp=readings_by_timestamp)
 
     @classmethod
