@@ -10,7 +10,7 @@ from clickshare_temperature.temperature_history import (
     SensorReading,
     TemperatureHistory,
 )
-from clickshare_temperature.types import BaseUnitInfo
+from clickshare_temperature.types import BaseUnitInfo, SensorType
 
 
 DATA_ROOT = Path(__file__).parent / "data"
@@ -174,7 +174,7 @@ LOG_ENTRY_TEST_CASES: list[LogEntryTestCase] = [
     ),
 ]
 
-LOG_ENTRY_SENSOR_READINGS: list[SensorReading] = [
+LOG_ENTRY_SENSOR_READINGS: list[SensorReading[SensorType]] = [
     # "2026-05-12T16:06:27.434937-05:00 ClickShare-1234567890 NetworkManager: [INFO] [7f16c75976c0] Temperature of wlan0: 49",
     SensorReading(
         timestamp=datetime.datetime.fromisoformat(
