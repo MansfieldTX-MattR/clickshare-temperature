@@ -71,11 +71,11 @@ class LogFile:
     entries: list[LogEntry] = field(default_factory=list)
     entries_by_timestamp: dict[datetime.datetime, list[LogEntry]] = field(default_factory=dict)
 
-    def parse_entries(self):
+    def parse_entries(self, filename: Path|None = None) -> None:
         """Parse the log file into a sequence of LogEntry objects."""
         if len(self.entries):
             raise ValueError("Log entries have already been parsed.")
-        content_bytes = self.filename.read_bytes()
+        content_bytes = (filename or self.filename).read_bytes()
         content = content_bytes.decode("utf-8", errors="replace")
         for line in content.splitlines():
             line = line.strip()
@@ -366,16 +366,17 @@ class LogArchive:
                 index = 0
                 is_gzipped = False
 
+            relative_log_filename = Path("log") / p.name
             if is_gzipped:
                 with gzip.open(p, "rb") as f:
                     log_content_bytes = f.read()
                     log_content = log_content_bytes.decode("utf-8")
                     log_filename = tmpdir / p.stem
                     log_filename.write_text(log_content)
-                log_file = LogFile(filename=log_filename, index=index)
             else:
-                log_file = LogFile(filename=p, index=index)
-            log_file.parse_entries()
+                log_filename = p
+            log_file = LogFile(filename=relative_log_filename, index=index)
+            log_file.parse_entries(filename=log_filename)
             self.log_files.append(log_file)
         self.log_files.sort(key=lambda lf: lf.index)
         self.log_files.reverse()  # Logs are ordered from newest to oldest, so reverse the list to have oldest first
