@@ -251,8 +251,13 @@ class LogEntry(NamedTuple):
     def serialize_str(self) -> str:
         """Serialize the LogEntry to a log line string."""
         timestamp_str = self.timestamp.isoformat()
-        level_str = f"[{self.level}]" if self.level is not None else ""
-        return f"{timestamp_str} {self.hostname} {self.process}: {level_str} {self.message}".strip()
+        level_str = f"[{self.level}] " if self.level is not None else ""
+        process_str = (
+            f"{self.process}[{self.process_number}]"
+            if self.process_number is not None
+            else self.process
+        )
+        return f"{timestamp_str} {self.hostname} {process_str}: {level_str}{self.message}"
 
     @classmethod
     def deserialize_str(cls, line: str) -> Self:
