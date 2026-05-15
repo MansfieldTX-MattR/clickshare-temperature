@@ -8,6 +8,16 @@ import pytest
 from clickshare_temperature.log_archive import LogEntry, LogArchive
 
 
+DATA_ROOT = Path(__file__).parent / "data"
+LOG_ARCHIVE_FILE = DATA_ROOT / "logs" / "archive.tar.gz"
+LOG_ARCHIVE_EXPECTED_FILES = [
+    Path("log/info"),
+    Path("log/info.1.gz"),
+    Path("log/info.2.gz"),
+    Path("log/info.3.gz"),
+]
+
+
 class LogEntryTestCase(NamedTuple):
     line: str
     expected: LogEntry
@@ -154,3 +164,18 @@ def log_entry_test_case(request: pytest.FixtureRequest) -> LogEntryTestCase:
 def test_log_entry_parsing(log_entry_test_case) -> None:
     line, expected = log_entry_test_case
     assert LogEntry.from_log_line(line) == expected
+
+
+def test_log_archive_parsing() -> None:
+    archive = LogArchive()
+    archive.parse_archive_file(LOG_ARCHIVE_FILE)
+    extracted_files = [f.filename for f in archive.log_files]
+
+    assert set(extracted_files) == set(LOG_ARCHIVE_EXPECTED_FILES)
+    assert len(archive.log_files) == len(LOG_ARCHIVE_EXPECTED_FILES)
+
+    parsed_entries = list(archive.all_entries(unique=True))
+
+    assert len(parsed_entries) == len(LOG_ENTRY_TEST_CASES)
+    for parsed_entry, expected_case in zip(parsed_entries, LOG_ENTRY_TEST_CASES):
+        assert parsed_entry == expected_case.expected
