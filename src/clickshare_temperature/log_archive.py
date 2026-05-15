@@ -1,18 +1,23 @@
 from __future__ import annotations
 import io
-from typing import Self, NamedTuple, TypedDict, Iterator, Unpack
+from typing import Self, NamedTuple, TypedDict, NotRequired, Iterator, Unpack
 from pathlib import Path
 import tarfile
 import gzip
 import tempfile
 from dataclasses import dataclass, field
 import datetime
+import re
 
 from .baseunit_api import download_logs
 from .types import AuthInfo, LogLevel, LogLevels, AioHttpRequestOptions, AioHttpSessionOptions
 
 
 UTC = datetime.timezone.utc
+
+LOG_LINE_PATTERN: re.Pattern[str] = re.compile(r"^(\S+) (\S+) (.*?):\s*(.*)$")
+PROCESS_PATTERN: re.Pattern[str] = re.compile(r"^(\S+?)(?:\[(\d*)\])?$")
+LEVEL_PREFIX_PATTERN: re.Pattern[str] = re.compile(r"^\[(\w+)\] (.+)$")
 
 # ENTRY_DT_FMT = "%Y-%m-%dT%H:%M:%S.%fZ"
 
@@ -66,11 +71,11 @@ class LogFile:
     entries: list[LogEntry] = field(default_factory=list)
     entries_by_timestamp: dict[datetime.datetime, list[LogEntry]] = field(default_factory=dict)
 
-    def parse_entries(self):
+    def parse_entries(self, filename: Path|None = None) -> None:
         """Parse the log file into a sequence of LogEntry objects."""
         if len(self.entries):
             raise ValueError("Log entries have already been parsed.")
-        content_bytes = self.filename.read_bytes()
+        content_bytes = (filename or self.filename).read_bytes()
         content = content_bytes.decode("utf-8", errors="replace")
         for line in content.splitlines():
             line = line.strip()
@@ -166,6 +171,7 @@ class _LogEntrySerializeTD(TypedDict):
     process: str
     level: LogLevel|None
     message: str
+    process_number: NotRequired[int|None]
 
 
 class LogEntry(NamedTuple):
@@ -175,35 +181,48 @@ class LogEntry(NamedTuple):
     process: str
     level: LogLevel|None
     message: str
+    process_number: int|None = None
 
     @classmethod
     def from_log_line(cls, line: str) -> Self:
-        """Parse a log line into a LogEntry."""
-        def parse_log_level(line_after_hostname: str) -> tuple[LogLevel|None, str]:
-            if line_after_hostname.startswith("["):
-                try:
-                    level_str, message = line_after_hostname.split("] ", 1)
-                    level_str = level_str.lstrip("[").rstrip("]")
-                    if level_str in LogLevels:
-                        return level_str, message
-                except ValueError:
-                    return None, line_after_hostname
-            return None, line_after_hostname
-        # Example log line:
-        # 2024-06-01T12:34:56.123456-05:00 hostname process: [INFO] This is a log message
-        # For some entries, such as kernel events, the log level is not included:
-        # 2024-06-01T12:34:56.123456-05:00 hostname rsyslogd: [origin software="rsyslogd" swVersion="8.2102.0" x-pid="1234" x-info="https://www.rsyslog.com"] starting up
-        timestamp_str, rest = line.split(" ", 1)
+        """Parse a log line into a LogEntry
+        """
+        def log_level_or_none(level_str: str) -> LogLevel|None:
+            """Convert a log level string to a :type:`LogLevel` (a string literal type)
+            or return None if the string is not a valid log level.
+            """
+            if level_str in LogLevels:
+                return level_str
+            return None
+
+        match = LOG_LINE_PATTERN.match(line)
+        if not match:
+            raise ValueError(f"Invalid log line format: {line}")
+        timestamp_str, hostname, process_part, message_part = match.groups()
         timestamp = datetime.datetime.fromisoformat(timestamp_str)
-        hostname, rest = rest.split(" ", 1)
-        try:
-            process, rest = rest.split(":", 1)
-            process = process.strip()
-        except:
-            print(f"Error parsing log line (missing process): {timestamp_str=}, {hostname=}, {line=}")
-            raise
-        level, message = parse_log_level(rest)
-        return cls(timestamp=timestamp, hostname=hostname, process=process, level=level, message=message)
+        process = process_part
+        process_number_str = None
+        if process_part:
+            process_match = PROCESS_PATTERN.match(process_part)
+            if not process_match:
+                raise ValueError(f"Invalid process format in log line: {line}")
+            process = process_match.group(1)
+            process_number_str = process_match.group(2)
+        process_number = int(process_number_str) if process_number_str else None
+        level = None
+        message = message_part
+        level_match = LEVEL_PREFIX_PATTERN.match(message_part)
+        if level_match:
+            level_str, message = level_match.groups()
+            level = log_level_or_none(level_str)
+        return cls(
+            timestamp=timestamp,
+            hostname=hostname,
+            process=process,
+            level=level,
+            message=message,
+            process_number=process_number,
+        )
 
     def serialize(self) -> _LogEntrySerializeTD:
         """Serialize the LogEntry to a dictionary."""
@@ -213,6 +232,7 @@ class LogEntry(NamedTuple):
             "process": self.process,
             "level": self.level,
             "message": self.message,
+            "process_number": self.process_number,
         }
 
     @classmethod
@@ -225,13 +245,19 @@ class LogEntry(NamedTuple):
             process=data["process"],
             level=data["level"],
             message=data["message"],
+            process_number=data.get("process_number"),
         )
 
     def serialize_str(self) -> str:
         """Serialize the LogEntry to a log line string."""
         timestamp_str = self.timestamp.isoformat()
-        level_str = f"[{self.level}]" if self.level is not None else ""
-        return f"{timestamp_str} {self.hostname} {self.process}: {level_str} {self.message}".strip()
+        level_str = f"[{self.level}] " if self.level is not None else ""
+        process_str = (
+            f"{self.process}[{self.process_number}]"
+            if self.process_number is not None
+            else self.process
+        )
+        return f"{timestamp_str} {self.hostname} {process_str}: {level_str}{self.message}"
 
     @classmethod
     def deserialize_str(cls, line: str) -> Self:
@@ -345,28 +371,29 @@ class LogArchive:
                 index = 0
                 is_gzipped = False
 
+            relative_log_filename = Path("log") / p.name
             if is_gzipped:
                 with gzip.open(p, "rb") as f:
                     log_content_bytes = f.read()
                     log_content = log_content_bytes.decode("utf-8")
                     log_filename = tmpdir / p.stem
                     log_filename.write_text(log_content)
-                log_file = LogFile(filename=log_filename, index=index)
             else:
-                log_file = LogFile(filename=p, index=index)
-            log_file.parse_entries()
+                log_filename = p
+            log_file = LogFile(filename=relative_log_filename, index=index)
+            log_file.parse_entries(filename=log_filename)
             self.log_files.append(log_file)
         self.log_files.sort(key=lambda lf: lf.index)
         self.log_files.reverse()  # Logs are ordered from newest to oldest, so reverse the list to have oldest first
 
     def all_entries(self, unique: bool = True) -> Iterator[LogEntry]:
         """Get an iterator over all log entries in the archive, ordered by timestamp."""
-        timestamps_seen = set[datetime.datetime]()
+        entries_seen: set[str] = set()
         for log_file in self.log_files:
             for entry in log_file.values():
-                if unique and entry.timestamp in timestamps_seen:
+                if unique and entry.serialize_str() in entries_seen:
                     continue
-                timestamps_seen.add(entry.timestamp)
+                entries_seen.add(entry.serialize_str())
                 yield entry
 
     def combine_entries_with(self, other: LogArchive) -> LogArchive:
