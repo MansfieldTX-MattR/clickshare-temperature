@@ -235,3 +235,12 @@ def test_temperature_history_from_log_archive(sample_base_unit_info: BaseUnitInf
     assert len(temperature_history.readings) == len(expected_readings)
     for reading, expected in zip(temperature_history.readings, expected_readings):
         assert reading == expected
+
+
+def test_temperature_history_from_log_archive_file() -> None:
+    temperature_history = TemperatureHistory.from_archive_file(LOG_ARCHIVE_FILE)
+
+    expected_readings = LOG_ENTRY_SENSOR_READINGS
+    assert len(temperature_history.readings) == len(expected_readings)
+    for reading, expected in zip(temperature_history.readings, expected_readings):
+        assert reading == expected
