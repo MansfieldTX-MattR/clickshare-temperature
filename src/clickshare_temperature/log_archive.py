@@ -383,12 +383,12 @@ class LogArchive:
 
     def all_entries(self, unique: bool = True) -> Iterator[LogEntry]:
         """Get an iterator over all log entries in the archive, ordered by timestamp."""
-        timestamps_seen = set[datetime.datetime]()
+        entries_seen: set[str] = set()
         for log_file in self.log_files:
             for entry in log_file.values():
-                if unique and entry.timestamp in timestamps_seen:
+                if unique and entry.serialize_str() in entries_seen:
                     continue
-                timestamps_seen.add(entry.timestamp)
+                entries_seen.add(entry.serialize_str())
                 yield entry
 
     def combine_entries_with(self, other: LogArchive) -> LogArchive:
