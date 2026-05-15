@@ -95,6 +95,19 @@ LOG_ENTRY_TEST_CASES: list[LogEntryTestCase] = [
         ),
     ),
     LogEntryTestCase(
+        "2026-05-12T16:06:27.434937-05:00 ClickShare-1234567890 NetworkManager: [INFO] [7f16c75976c0] Temperature of wlan1: 52",
+        LogEntry(
+            timestamp=datetime.datetime.fromisoformat(
+                "2026-05-12T16:06:27.434937-05:00"
+            ),
+            hostname="ClickShare-1234567890",
+            process="NetworkManager",
+            level="INFO",
+            message="[7f16c75976c0] Temperature of wlan1: 52",
+            process_number=None,
+        ),
+    ),
+    LogEntryTestCase(
         "2026-05-12T16:07:41.427914-05:00 ClickShare-1234567890 CentralStore: [INFO] [7f5a5e531f40] Sensor readout CPUFanSpeed = 2814 RPM",
         LogEntry(
             timestamp=datetime.datetime.fromisoformat(
@@ -169,6 +182,14 @@ LOG_ENTRY_SENSOR_READINGS: list[SensorReading] = [
         ),
         sensor="WLAN0",
         value=49.0,
+    ),
+    # "2026-05-12T16:06:27.434937-05:00 ClickShare-1234567890 NetworkManager: [INFO] [7f16c75976c0] Temperature of wlan1: 52",
+    SensorReading(
+        timestamp=datetime.datetime.fromisoformat(
+            "2026-05-12T16:06:27.434937-05:00"
+        ),
+        sensor="WLAN1",
+        value=52.0,
     ),
     # "2026-05-12T16:07:41.427927-05:00 ClickShare-1234567890 CentralStore: [INFO] [7f5a5e531f40] Sensor readout CPUTemperature = 38.8 C",
     SensorReading(
