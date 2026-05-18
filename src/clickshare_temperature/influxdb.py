@@ -165,11 +165,12 @@ def reading_to_point(base_unit: BaseUnitInfo, reading: SensorReading[SensorType]
     """Convert a :class:`.SensorReading` to an InfluxDB `Point` for uploading to InfluxDB
     """
     assert reading.timestamp.tzinfo is not None, "Reading timestamp must be timezone-aware"
+    field = "rpm" if reading.sensor == "CPU_FAN" else "deg_c"
     p = Point("temperature") \
         .tag("device_id", base_unit.hostname) \
         .tag("room_name", base_unit.room_name) \
         .tag("sensor", reading.sensor) \
-        .field("deg_c", reading.value) \
+        .field(field, reading.value) \
         .time(reading.timestamp, WritePrecision.NS)
     return p
 
