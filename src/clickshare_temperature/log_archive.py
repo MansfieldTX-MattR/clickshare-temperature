@@ -396,7 +396,7 @@ class LogArchive:
                 entries_seen.add(entry.serialize_str())
                 yield entry
 
-    def combine_entries_with(self, other: LogArchive) -> LogArchive:
+    def combine_entries_with(self, other: Self) -> Self:
         """Combine the log entries from this archive with another archive, returning a new LogArchive.
 
         The combined archive will contain all unique log entries from both archives, ordered by timestamp.
@@ -408,7 +408,7 @@ class LogArchive:
                 continue
             combined_entries.append(entry)
         combined_entries.sort(key=lambda e: e.timestamp)
-        combined_archive = LogArchive()
+        combined_archive = self.__class__()
         log_file = LogFile(filename=Path("info"), index=0, entries=combined_entries)
         combined_archive.log_files.append(log_file)
         return combined_archive

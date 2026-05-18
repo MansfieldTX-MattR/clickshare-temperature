@@ -172,7 +172,7 @@ class BaseUnit(Base[BaseUnitNaturalKey, _BaseUnitSerializeTD]):
         return self.hostname
 
     @classmethod
-    def get_by_natural_key(cls, session: Session, key: BaseUnitNaturalKey) -> BaseUnit|None:
+    def get_by_natural_key(cls, session: Session, key: BaseUnitNaturalKey) -> Self|None:
         """Get the instance of this model from the given natural key
 
         If no instance exists, ``None`` is returned.
@@ -190,7 +190,7 @@ class BaseUnit(Base[BaseUnitNaturalKey, _BaseUnitSerializeTD]):
         }
 
     @classmethod
-    def deserialize(cls, data: _BaseUnitSerializeTD, session: Session) -> BaseUnit|None:
+    def deserialize(cls, data: _BaseUnitSerializeTD, session: Session) -> Self|None:
         """Deserialize a dictionary into a an instance of this model
         """
         return cls(
@@ -397,7 +397,7 @@ class BaseUnitIdentity(Base[BaseUnitIdentityNaturalKey, _BaseUnitIdentitySeriali
         )
 
     @classmethod
-    def get_by_natural_key(cls, session: Session, key: BaseUnitIdentityNaturalKey) -> BaseUnitIdentity|None:
+    def get_by_natural_key(cls, session: Session, key: BaseUnitIdentityNaturalKey) -> Self|None:
         """Get the instance of this model from the given natural key
 
         If no instance exists, ``None`` is returned.
@@ -425,7 +425,7 @@ class BaseUnitIdentity(Base[BaseUnitIdentityNaturalKey, _BaseUnitIdentitySeriali
         }
 
     @classmethod
-    def deserialize(cls, data: _BaseUnitIdentitySerializeTD, session: Session) -> BaseUnitIdentity|None:
+    def deserialize(cls, data: _BaseUnitIdentitySerializeTD, session: Session) -> Self|None:
         """Deserialize a dictionary into a an instance of this model
         """
         assert isinstance(data["base_unit"], RelationshipNaturalKey), f"Expected 'base_unit' to be a RelationshipNaturalKey, got {data['base_unit']}"
@@ -498,7 +498,7 @@ class PowerManagementSettings(Base[PowerManagementSettingsNaturalKey, _PowerMana
         )
 
     @classmethod
-    def get_by_natural_key(cls, session: Session, key: PowerManagementSettingsNaturalKey) -> PowerManagementSettings|None:
+    def get_by_natural_key(cls, session: Session, key: PowerManagementSettingsNaturalKey) -> Self|None:
         """Get the instance of this model from the given natural key
 
         If no instance exists, ``None`` is returned.
@@ -523,7 +523,7 @@ class PowerManagementSettings(Base[PowerManagementSettingsNaturalKey, _PowerMana
         }
 
     @classmethod
-    def deserialize(cls, data: _PowerManagementSettingsSerializeTD, session: Session) -> PowerManagementSettings|None:
+    def deserialize(cls, data: _PowerManagementSettingsSerializeTD, session: Session) -> Self|None:
         """Deserialize a dictionary into a an instance of this model
         """
         assert isinstance(data["base_unit"], RelationshipNaturalKey), f"Expected 'base_unit' to be a RelationshipNaturalKey, got {data['base_unit']}"
@@ -598,7 +598,7 @@ class PowerManagementStatus(Base):
         )
 
     @classmethod
-    def get_by_natural_key(cls, session: Session, key: PowerManagementStatusNaturalKey) -> PowerManagementStatus|None:
+    def get_by_natural_key(cls, session: Session, key: PowerManagementStatusNaturalKey) -> Self|None:
         """Get the instance of this model from the given natural key
 
         If no instance exists, ``None`` is returned.
@@ -624,7 +624,7 @@ class PowerManagementStatus(Base):
         }
 
     @classmethod
-    def deserialize(cls, data: _PowerManagementStatusSerializeTD, session: Session) -> PowerManagementStatus|None:
+    def deserialize(cls, data: _PowerManagementStatusSerializeTD, session: Session) -> Self|None:
         """Deserialize a dictionary into an instance of this model
         """
         assert isinstance(data["base_unit"], RelationshipNaturalKey), f"Expected 'base_unit' to be a RelationshipNaturalKey, got {data['base_unit']}"
@@ -712,7 +712,7 @@ class BaseUnitStatus(Base[BaseUnitStatusNaturalKey, _BaseUnitStatusSerializeTD])
         )
 
     @classmethod
-    def deserialize(cls, data: _BaseUnitStatusSerializeTD, session: Session) -> BaseUnitStatus|None:
+    def deserialize(cls, data: _BaseUnitStatusSerializeTD, session: Session) -> Self|None:
         """Deserialize a dictionary into an instance of this model
         """
         assert isinstance(data["base_unit"], RelationshipNaturalKey), f"Expected 'base_unit' to be a RelationshipNaturalKey, got {data['base_unit']}"
@@ -733,7 +733,7 @@ class BaseUnitStatus(Base[BaseUnitStatusNaturalKey, _BaseUnitStatusSerializeTD])
         )
 
     @classmethod
-    def get_by_natural_key(cls, session: Session, key: BaseUnitStatusNaturalKey) -> BaseUnitStatus|None:
+    def get_by_natural_key(cls, session: Session, key: BaseUnitStatusNaturalKey) -> Self|None:
         """Get the instance of this model from the given natural key
 
         If no instance exists, ``None`` is returned.
