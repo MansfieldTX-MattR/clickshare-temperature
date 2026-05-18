@@ -154,6 +154,7 @@ class TemperatureHistory:
                 return SensorReading(timestamp=entry.timestamp, sensor="CPU", value=value)
         elif entry.process == "NetworkManager":
             s = "Temperature of wlan"
+            sensor: SensorType
             if s in entry.message:
                 if "wlan0" in entry.message:
                     sensor = "WLAN0"
