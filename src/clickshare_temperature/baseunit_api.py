@@ -85,6 +85,11 @@ async def api_request(
             await session.close()
 
 
+
+class _SystemNetworkResponse(TypedDict):
+    hostname: str
+
+
 async def get_baseunit_hostname(
     baseunit_ip: str,
     /,
@@ -102,8 +107,13 @@ async def get_baseunit_hostname(
         session_options=session_options,
         **request_options,
     ) as response:
-        data = await response.json()
+        data: _SystemNetworkResponse = await response.json()
         return data["hostname"]
+
+
+
+class _PersonalizationResponse(TypedDict):
+    meetingRoomName: str
 
 
 async def get_baseunit_roomname(
@@ -123,7 +133,7 @@ async def get_baseunit_roomname(
         session_options=session_options,
         **request_options,
     ) as response:
-        data = await response.json()
+        data: _PersonalizationResponse = await response.json()
         return data["meetingRoomName"]
 
 

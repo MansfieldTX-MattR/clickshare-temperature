@@ -146,7 +146,7 @@ class TemperatureHistory:
             return cls.from_archive_bytes(base_unit, archive_path.read_bytes())
 
     @classmethod
-    def _parse_archive_entry(cls, entry: LogEntry) -> SensorReading|None:
+    def _parse_archive_entry(cls, entry: LogEntry) -> SensorReading[SensorType]|None:
         if entry.process == "CentralStore":
             s = "Sensor readout CPUTemperature = "
             if s in entry.message:
@@ -202,7 +202,7 @@ class TemperatureHistory:
         current_readings = self.get_current()
         return "\n".join(f"{reading.sensor}: {reading.value}°C" for reading in current_readings.values())
 
-    def __contains__(self, reading: SensorReading) -> bool:
+    def __contains__(self, reading: SensorReading[SensorType]) -> bool:
         """Check if a SensorReading is in the TemperatureHistory."""
         if reading.timestamp not in self.readings_by_timestamp:
             return False

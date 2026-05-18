@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Literal, TYPE_CHECKING
+from typing import Literal, Any, TYPE_CHECKING
 from pathlib import Path
 
 import click
@@ -37,7 +37,7 @@ def click_secho(
     err: bool = False,
     color: bool|None = None,
     fg: ClickColor|None = None,
-    **styles
+    **styles: Any,
 ) -> None:
     """Wrapper around click.secho with a typed color argument"""
     click.secho(msg, nl=nl, err=err, color=color, fg=fg, **styles)

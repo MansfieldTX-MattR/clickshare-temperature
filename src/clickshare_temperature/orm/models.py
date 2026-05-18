@@ -275,7 +275,11 @@ class BaseUnit(Base[BaseUnitNaturalKey, _BaseUnitSerializeTD]):
             num_added += 1
         click_secho(f"Added {num_added} sensor readings for BaseUnit '{self.hostname}' to the database", fg="green")
 
-    def add_sensor_readings(self, readings: list[SensorReadingData], session: Session) -> tuple[int, int]:
+    def add_sensor_readings(
+        self,
+        readings: list[SensorReadingData[SensorType]],
+        session: Session
+    ) -> tuple[int, int]:
         """Add multiple sensor readings to this BaseUnit
 
         Returns:
@@ -301,13 +305,13 @@ class BaseUnit(Base[BaseUnitNaturalKey, _BaseUnitSerializeTD]):
             num_added += 1
         return num_added, num_skipped
 
-    def add_sensor_reading(self, reading: SensorReadingData, session: Session) -> SensorReading:
+    def add_sensor_reading(self, reading: SensorReadingData[SensorType], session: Session) -> SensorReading:
         """Add a :class:`SensorReading` to this BaseUnit."""
         sensor_reading = SensorReading.from_data(self, reading, session)
         session.add(sensor_reading)
         return sensor_reading
 
-    def has_sensor_reading(self, reading: SensorReadingData, session: Session) -> bool:
+    def has_sensor_reading(self, reading: SensorReadingData[SensorType], session: Session) -> bool:
         """Check if a :class:`SensorReading` already exists for this BaseUnit
 
         The reading's timestamp and sensor type are used to determine if it
@@ -573,7 +577,7 @@ class PowerManagementSettings(Base[PowerManagementSettingsNaturalKey, _PowerMana
 
 
 
-class PowerManagementStatus(Base):
+class PowerManagementStatus(Base[PowerManagementStatusNaturalKey, _PowerManagementStatusSerializeTD]):
     """ORM model for the power state of a ClickShare BaseUnit at a given point in time
     """
     __tablename__ = "power_management_status"
@@ -998,7 +1002,12 @@ class SensorReading(Base[SensorReadingNaturalKey, _SensorReadingSerializeTD]):
         return session.query(SensorReading).filter_by(sensor_type=sensor_type)
 
     @classmethod
-    def from_data(cls, base_unit: BaseUnit|BaseUnitInfo|int, reading: SensorReadingData, session: Session) -> Self:
+    def from_data(
+        cls,
+        base_unit: BaseUnit|BaseUnitInfo|int,
+        reading: SensorReadingData[SensorType],
+        session: Session
+    ) -> Self:
         """Create an instance of this model from a :class:`.types.SensorReading` instance
         """
         if isinstance(base_unit, BaseUnitInfo):
@@ -1012,7 +1021,7 @@ class SensorReading(Base[SensorReadingNaturalKey, _SensorReadingSerializeTD]):
             value=reading.value,
         )
 
-    def to_data(self) -> SensorReadingData:
+    def to_data(self) -> SensorReadingData[SensorType]:
         """Convert this instance to a :class:`.types.SensorReading` instance
         """
         assert self.timestamp.tzinfo is not None, "SensorReading timestamp must be timezone-aware"

@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Self
+from typing import Self, Any
 from abc import abstractmethod
 import datetime
 import enum
@@ -19,7 +19,7 @@ from .types import FullySerializedModelTD, DeserializationError, _BaseModelSeria
 
 
 
-class Base[NaturalKeyType, SerializeType: (_BaseModelSerializeTD)](DeclarativeBase):
+class Base[NaturalKeyType, SerializeType: (_BaseModelSerializeTD[Any])](DeclarativeBase):
     """Base class for SQLAlchemy ORM models."""
     type_annotation_map = {
         # int: BIGINT,
@@ -91,4 +91,5 @@ class Base[NaturalKeyType, SerializeType: (_BaseModelSerializeTD)](DeclarativeBa
         session = inspect(self).session
         if session is None:
             raise RuntimeError("Model instance is not attached to a session")
+        assert isinstance(session, Session)
         return session
