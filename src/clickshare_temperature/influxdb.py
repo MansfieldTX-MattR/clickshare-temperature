@@ -1,18 +1,12 @@
 from __future__ import annotations
-from typing import NamedTuple, TypedDict, Iterable, Self, Iterator
+from typing import NamedTuple, TypedDict, Iterable, Self
 import datetime
 import os
 from pathlib import Path
 import json
-import enum
-from contextlib import contextmanager
 
 from dotenv import load_dotenv
-from influxdb_client_3 import (
-    InfluxDBClient3,
-    Point,
-    WritePrecision as _WritePrecision,
-)
+from influxdb_client_3 import InfluxDBClient3, Point, WritePrecision
 import click
 
 from .temperature_history import SensorReading, TemperatureHistory
@@ -30,62 +24,6 @@ INFLUX_URL = os.getenv("INFLUX_URL", "http://localhost:8086")
 INFLUX_TOKEN = os.getenv("INFLUX_TOKEN", "my-influxdb-token")
 INFLUX_ORG = os.getenv("INFLUX_ORG", "my-org")
 INFLUX_BUCKET = os.getenv("INFLUX_BUCKET", "clickshare_temperature")
-
-
-class WritePrecision(enum.Enum):
-    """Enum mirroring the options for InfluxDB's `WritePrecision`
-
-    As of the time of writing, InfluxDB's `WritePrecision` is not a true enum,
-    it only defines class attributes for the different options.
-
-    It is being defined as an enum here to allow for type safety and easier
-    conversion to the string values expected by the InfluxDB client.
-    """
-    S = "s"
-    MS = "ms"
-    US = "us"
-    NS = "ns"
-
-    def to_influx_write_precision(self) -> str:
-        """Convert this enum value to the string value expected by the InfluxDB client
-        """
-        result = getattr(_WritePrecision, self.name)
-        assert isinstance(result, str)
-        return result
-
-
-type FieldType = str|int|float|bool
-"""Type for InfluxDB field values, which can be strings, numbers, or booleans"""
-
-
-
-def create_point(
-    measurement_name: str,
-    tags: dict[str, str],
-    fields: dict[str, FieldType],
-    timestamp: datetime.datetime,
-    write_precision: WritePrecision
-) -> Point:
-    """Create an InfluxDB `Point` object with the given measurement name, tags, fields, and timestamp
-    """
-    assert timestamp.tzinfo is not None, "Timestamp must be timezone-aware"
-    p = Point(measurement_name)                 # type: ignore[no-untyped-call]
-    for tag_key, tag_value in tags.items():
-        p.tag(tag_key, tag_value)               # type: ignore[no-untyped-call]
-    for field_key, field_value in fields.items():
-        p.field(field_key, field_value)         # type: ignore[no-untyped-call]
-    p.time(timestamp, write_precision.to_influx_write_precision()) # type: ignore[no-untyped-call]
-    return p
-
-
-@contextmanager
-def influxdb_client(host: str, token: str, org: str) -> Iterator[InfluxDBClient3]:
-    """Context manager for creating and closing an InfluxDB client connection"""
-    client = InfluxDBClient3(host=host, token=token, org=org) # type: ignore[no-untyped-call]
-    try:
-        yield client
-    finally:
-        client.close() # type: ignore[no-untyped-call]
 
 
 class LastReadingInfoTD(TypedDict):
@@ -227,19 +165,13 @@ def reading_to_point(base_unit: BaseUnitInfo, reading: SensorReading[SensorType]
     """Convert a :class:`.SensorReading` to an InfluxDB `Point` for uploading to InfluxDB
     """
     assert reading.timestamp.tzinfo is not None, "Reading timestamp must be timezone-aware"
-    return create_point(
-        measurement_name="temperature_reading",
-        tags={
-            "device_id": base_unit.hostname,
-            "room_name": base_unit.room_name,
-            "sensor": reading.sensor,
-        },
-        fields={
-            "deg_c": reading.value,
-        },
-        timestamp=reading.timestamp,
-        write_precision=WritePrecision.NS,
-    )
+    p = Point("temperature") \
+        .tag("device_id", base_unit.hostname) \
+        .tag("room_name", base_unit.room_name) \
+        .tag("sensor", reading.sensor) \
+        .field("deg_c", reading.value) \
+        .time(reading.timestamp, WritePrecision.NS)
+    return p
 
 
 def backfill_readings(
@@ -260,9 +192,9 @@ def backfill_readings(
                 last_readings_info = last_readings_info.update_with_reading(base_unit.hostname, r)
     if not len(readings_to_upload):
         return 0
-    with influxdb_client(host=INFLUX_URL, token=INFLUX_TOKEN, org=INFLUX_ORG) as client:
+    with InfluxDBClient3(host=INFLUX_URL, token=INFLUX_TOKEN, org=INFLUX_ORG) as client:
         points = [reading_to_point(base_unit, r) for r in readings_to_upload]
-        client.write(database=INFLUX_BUCKET, record=points) # type: ignore[no-untyped-call]
+        client.write(database=INFLUX_BUCKET, record=points)
         if not ignore_last_readings_info:
             last_readings_info.save()
 
@@ -278,28 +210,18 @@ def baseunit_status_to_point(
     """
     assert timestamp.tzinfo is not None, "Timestamp must be timezone-aware"
     m_name = "baseunit_status" if isinstance(status, BaseUnitStatus) else "baseunit_usage_status"
-    fields: dict[str, FieldType] = {
-        "in_use": status.in_use,
-        "sharing": status.sharing,
-    }
+    p = Point(m_name) \
+        .tag("device_id", status.base_unit.hostname) \
+        .tag("room_name", status.base_unit.room_name) \
+        .field("in_use", status.in_use) \
+        .field("sharing", status.sharing) \
+        .time(timestamp, WritePrecision.NS)
     if isinstance(status, BaseUnitStatus):
-        fields.update({
-            "current_uptime_seconds": int(status.current_uptime.total_seconds()),
-            "total_uptime_seconds": int(status.total_uptime.total_seconds()),
-            "error_code": status.error_code,
-            "error_message": status.error_message or "",
-            "first_used_timestamp": int(status.first_used.timestamp()),
-        })
-    p = create_point(
-        measurement_name=m_name,
-        tags={
-            "device_id": status.base_unit.hostname,
-            "room_name": status.base_unit.room_name,
-        },
-        fields=fields,
-        timestamp=timestamp,
-        write_precision=WritePrecision.NS,
-    )
+        p = p.field("current_uptime_seconds", int(status.current_uptime.total_seconds())) \
+            .field("total_uptime_seconds", int(status.total_uptime.total_seconds())) \
+            .field("error_code", status.error_code) \
+            .field("error_message", status.error_message or "") \
+            .field("first_used_timestamp", int(status.first_used.timestamp()))
     return p
 
 
@@ -312,18 +234,12 @@ def power_management_status_to_point(
     uploading to InfluxDB
     """
     assert timestamp.tzinfo is not None, "Timestamp must be timezone-aware"
-    return create_point(
-        measurement_name="power_management_status",
-        tags={
-            "device_id": base_unit.hostname,
-            "room_name": base_unit.room_name,
-        },
-        fields={
-            "power_mode": mode,
-        },
-        timestamp=timestamp,
-        write_precision=WritePrecision.NS,
-    )
+    p = Point("power_management_status") \
+        .tag("device_id", base_unit.hostname) \
+        .tag("room_name", base_unit.room_name) \
+        .field("power_mode", mode) \
+        .time(timestamp, WritePrecision.NS)
+    return p
 
 
 def upload_baseunit_status(
@@ -332,12 +248,12 @@ def upload_baseunit_status(
     """Upload one or more :class:`.BaseUnitStatus` or :class:`.BaseUnitUsageStatus`
     objects to InfluxDB
     """
-    with influxdb_client(host=INFLUX_URL, token=INFLUX_TOKEN, org=INFLUX_ORG) as client:
+    with InfluxDBClient3(host=INFLUX_URL, token=INFLUX_TOKEN, org=INFLUX_ORG) as client:
         points = [
             baseunit_status_to_point(status, timestamp)
             for status, timestamp in statuses
         ]
-        client.write(database=INFLUX_BUCKET, record=points) # type: ignore[no-untyped-call]
+        client.write(database=INFLUX_BUCKET, record=points)
 
 
 def upload_power_management_statuses(
@@ -345,12 +261,12 @@ def upload_power_management_statuses(
 ) -> None:
     """Upload one or more :class:`.PowerManagementStatus` objects to InfluxDB
     """
-    with influxdb_client(host=INFLUX_URL, token=INFLUX_TOKEN, org=INFLUX_ORG) as client:
+    with InfluxDBClient3(host=INFLUX_URL, token=INFLUX_TOKEN, org=INFLUX_ORG) as client:
         points = [
             power_management_status_to_point(base_unit, mode, timestamp)
             for base_unit, mode, timestamp in statuses
         ]
-        client.write(database=INFLUX_BUCKET, record=points) # type: ignore[no-untyped-call]
+        client.write(database=INFLUX_BUCKET, record=points)
 
 
 def load_temperature_history_from_file(filepath: Path) -> TemperatureHistory:
