@@ -61,6 +61,19 @@ uv run mypy
 This should **always** pass without any errors or warnings. If you encounter any type errors, please fix them before committing your code.
 
 
+#### Strict Type Checking
+
+This project prefers strict type checking with mypy's `--strict` flag enabled:
+
+```bash
+uv run mypy --strict
+```
+
+
+This _should_ be pass without any errors or warnings, but if you encounter any type errors that cannot be easily resolved, please seek assistance rather than suppressing the errors or using `# type: ignore` comments.
+
+
+
 ### Linting
 
 Linting is done using `ruff`. To run linting, use the following command:
