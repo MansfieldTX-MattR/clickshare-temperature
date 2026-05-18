@@ -70,7 +70,7 @@ uv run mypy --strict
 ```
 
 
-This _should_ be pass without any errors or warnings, but if you encounter any type errors that cannot be easily resolved, please seek assistance rather than suppressing the errors or using `# type: ignore` comments.
+This _should_ pass without any errors or warnings, but if you encounter any type errors that cannot be easily resolved, please seek assistance rather than suppressing the errors or using `# type: ignore` comments.
 
 
 
