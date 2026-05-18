@@ -69,8 +69,10 @@ This project prefers strict type checking with mypy's `--strict` flag enabled:
 uv run mypy --strict
 ```
 
-
-This _should_ pass without any errors or warnings, but if you encounter any type errors that cannot be easily resolved, please seek assistance rather than suppressing the errors or using `# type: ignore` comments.
+Ideally this should pass without any errors or warnings. If you encounter strict
+mode errors that are not straightforward to resolve, do not suppress them with
+`# type: ignore` comments or other workarounds — instead, seek clarification or
+assistance so the issue can be resolved collaboratively.
 
 
 
