@@ -297,8 +297,8 @@ class PowerManagementInfo(NamedTuple):
 type LogLevel = Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
 LogLevels: tuple[LogLevel, ...] = ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL")
 
-type SensorType = Literal["CPU", "WLAN0", "WLAN1"]
-SensorTypes: tuple[SensorType, ...] = ("CPU", "WLAN0", "WLAN1")
+type SensorType = Literal["CPU", "WLAN0", "WLAN1", "CPU_FAN"]
+SensorTypes: tuple[SensorType, ...] = ("CPU", "WLAN0", "WLAN1", "CPU_FAN")
 
 
 type SSLOptions = SSLContext|Fingerprint|bool

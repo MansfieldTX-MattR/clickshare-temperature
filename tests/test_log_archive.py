@@ -191,6 +191,14 @@ LOG_ENTRY_SENSOR_READINGS: list[SensorReading[SensorType]] = [
         sensor="WLAN1",
         value=52.0,
     ),
+    # 2026-05-12T16:07:41.427914-05:00 ClickShare-1234567890 CentralStore: [INFO] [7f5a5e531f40] Sensor readout CPUFanSpeed = 2814 RPM
+    SensorReading(
+        timestamp=datetime.datetime.fromisoformat(
+            "2026-05-12T16:07:41.427914-05:00"
+        ),
+        sensor="CPU_FAN",
+        value=2814.0,
+    ),
     # "2026-05-12T16:07:41.427927-05:00 ClickShare-1234567890 CentralStore: [INFO] [7f5a5e531f40] Sensor readout CPUTemperature = 38.8 C",
     SensorReading(
         timestamp=datetime.datetime.fromisoformat(
