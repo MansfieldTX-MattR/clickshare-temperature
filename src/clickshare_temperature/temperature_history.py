@@ -15,8 +15,8 @@ from .types import (
     BaseUnitInfo, BaseUnitInfoSerializeTD,
 )
 
-CPU_TEMP_PATTERN = re.compile(r"Sensor readout CPUTemperature = ([\d.]+) C")
-WLAN_TEMP_PATTERN = re.compile(r"Temperature of (wlan\d): ([\d.]+)")
+CPU_TEMP_PATTERN = re.compile(r"Sensor readout CPUTemperature = (\d+(?:\.\d+)?) C")
+WLAN_TEMP_PATTERN = re.compile(r"Temperature of (wlan\d): (\d+(?:\.\d+)?)")
 
 
 class _SensorReadingSerializeTD[_T: SensorType](TypedDict):
