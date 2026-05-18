@@ -35,7 +35,12 @@ build-backend = "hatchling.build"
 
 
 [tool.mypy]
+mypy_path = ["typings"]
 packages = ["clickshare_temperature"]
+
+[[tool.mypy.overrides]]
+module = "influxdb_client_3.*"
+ignore_errors = true
 
 [tool.ruff]
 include = ["pyproject.toml", "src/**/*.py"]
