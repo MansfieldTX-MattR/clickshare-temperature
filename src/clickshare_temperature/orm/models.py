@@ -172,7 +172,7 @@ class BaseUnit(Base[BaseUnitNaturalKey, _BaseUnitSerializeTD]):
         return self.hostname
 
     @classmethod
-    def get_by_natural_key(cls, session: Session, key: BaseUnitNaturalKey) -> BaseUnit|None:
+    def get_by_natural_key(cls, session: Session, key: BaseUnitNaturalKey) -> Self|None:
         """Get the instance of this model from the given natural key
 
         If no instance exists, ``None`` is returned.
@@ -190,7 +190,7 @@ class BaseUnit(Base[BaseUnitNaturalKey, _BaseUnitSerializeTD]):
         }
 
     @classmethod
-    def deserialize(cls, data: _BaseUnitSerializeTD, session: Session) -> BaseUnit|None:
+    def deserialize(cls, data: _BaseUnitSerializeTD, session: Session) -> Self|None:
         """Deserialize a dictionary into a an instance of this model
         """
         return cls(
@@ -275,7 +275,11 @@ class BaseUnit(Base[BaseUnitNaturalKey, _BaseUnitSerializeTD]):
             num_added += 1
         click_secho(f"Added {num_added} sensor readings for BaseUnit '{self.hostname}' to the database", fg="green")
 
-    def add_sensor_readings(self, readings: list[SensorReadingData], session: Session) -> tuple[int, int]:
+    def add_sensor_readings(
+        self,
+        readings: list[SensorReadingData[SensorType]],
+        session: Session
+    ) -> tuple[int, int]:
         """Add multiple sensor readings to this BaseUnit
 
         Returns:
@@ -301,13 +305,13 @@ class BaseUnit(Base[BaseUnitNaturalKey, _BaseUnitSerializeTD]):
             num_added += 1
         return num_added, num_skipped
 
-    def add_sensor_reading(self, reading: SensorReadingData, session: Session) -> SensorReading:
+    def add_sensor_reading(self, reading: SensorReadingData[SensorType], session: Session) -> SensorReading:
         """Add a :class:`SensorReading` to this BaseUnit."""
         sensor_reading = SensorReading.from_data(self, reading, session)
         session.add(sensor_reading)
         return sensor_reading
 
-    def has_sensor_reading(self, reading: SensorReadingData, session: Session) -> bool:
+    def has_sensor_reading(self, reading: SensorReadingData[SensorType], session: Session) -> bool:
         """Check if a :class:`SensorReading` already exists for this BaseUnit
 
         The reading's timestamp and sensor type are used to determine if it
@@ -397,7 +401,7 @@ class BaseUnitIdentity(Base[BaseUnitIdentityNaturalKey, _BaseUnitIdentitySeriali
         )
 
     @classmethod
-    def get_by_natural_key(cls, session: Session, key: BaseUnitIdentityNaturalKey) -> BaseUnitIdentity|None:
+    def get_by_natural_key(cls, session: Session, key: BaseUnitIdentityNaturalKey) -> Self|None:
         """Get the instance of this model from the given natural key
 
         If no instance exists, ``None`` is returned.
@@ -425,7 +429,7 @@ class BaseUnitIdentity(Base[BaseUnitIdentityNaturalKey, _BaseUnitIdentitySeriali
         }
 
     @classmethod
-    def deserialize(cls, data: _BaseUnitIdentitySerializeTD, session: Session) -> BaseUnitIdentity|None:
+    def deserialize(cls, data: _BaseUnitIdentitySerializeTD, session: Session) -> Self|None:
         """Deserialize a dictionary into a an instance of this model
         """
         assert isinstance(data["base_unit"], RelationshipNaturalKey), f"Expected 'base_unit' to be a RelationshipNaturalKey, got {data['base_unit']}"
@@ -498,7 +502,7 @@ class PowerManagementSettings(Base[PowerManagementSettingsNaturalKey, _PowerMana
         )
 
     @classmethod
-    def get_by_natural_key(cls, session: Session, key: PowerManagementSettingsNaturalKey) -> PowerManagementSettings|None:
+    def get_by_natural_key(cls, session: Session, key: PowerManagementSettingsNaturalKey) -> Self|None:
         """Get the instance of this model from the given natural key
 
         If no instance exists, ``None`` is returned.
@@ -523,7 +527,7 @@ class PowerManagementSettings(Base[PowerManagementSettingsNaturalKey, _PowerMana
         }
 
     @classmethod
-    def deserialize(cls, data: _PowerManagementSettingsSerializeTD, session: Session) -> PowerManagementSettings|None:
+    def deserialize(cls, data: _PowerManagementSettingsSerializeTD, session: Session) -> Self|None:
         """Deserialize a dictionary into a an instance of this model
         """
         assert isinstance(data["base_unit"], RelationshipNaturalKey), f"Expected 'base_unit' to be a RelationshipNaturalKey, got {data['base_unit']}"
@@ -573,7 +577,7 @@ class PowerManagementSettings(Base[PowerManagementSettingsNaturalKey, _PowerMana
 
 
 
-class PowerManagementStatus(Base):
+class PowerManagementStatus(Base[PowerManagementStatusNaturalKey, _PowerManagementStatusSerializeTD]):
     """ORM model for the power state of a ClickShare BaseUnit at a given point in time
     """
     __tablename__ = "power_management_status"
@@ -598,7 +602,7 @@ class PowerManagementStatus(Base):
         )
 
     @classmethod
-    def get_by_natural_key(cls, session: Session, key: PowerManagementStatusNaturalKey) -> PowerManagementStatus|None:
+    def get_by_natural_key(cls, session: Session, key: PowerManagementStatusNaturalKey) -> Self|None:
         """Get the instance of this model from the given natural key
 
         If no instance exists, ``None`` is returned.
@@ -624,7 +628,7 @@ class PowerManagementStatus(Base):
         }
 
     @classmethod
-    def deserialize(cls, data: _PowerManagementStatusSerializeTD, session: Session) -> PowerManagementStatus|None:
+    def deserialize(cls, data: _PowerManagementStatusSerializeTD, session: Session) -> Self|None:
         """Deserialize a dictionary into an instance of this model
         """
         assert isinstance(data["base_unit"], RelationshipNaturalKey), f"Expected 'base_unit' to be a RelationshipNaturalKey, got {data['base_unit']}"
@@ -712,7 +716,7 @@ class BaseUnitStatus(Base[BaseUnitStatusNaturalKey, _BaseUnitStatusSerializeTD])
         )
 
     @classmethod
-    def deserialize(cls, data: _BaseUnitStatusSerializeTD, session: Session) -> BaseUnitStatus|None:
+    def deserialize(cls, data: _BaseUnitStatusSerializeTD, session: Session) -> Self|None:
         """Deserialize a dictionary into an instance of this model
         """
         assert isinstance(data["base_unit"], RelationshipNaturalKey), f"Expected 'base_unit' to be a RelationshipNaturalKey, got {data['base_unit']}"
@@ -733,7 +737,7 @@ class BaseUnitStatus(Base[BaseUnitStatusNaturalKey, _BaseUnitStatusSerializeTD])
         )
 
     @classmethod
-    def get_by_natural_key(cls, session: Session, key: BaseUnitStatusNaturalKey) -> BaseUnitStatus|None:
+    def get_by_natural_key(cls, session: Session, key: BaseUnitStatusNaturalKey) -> Self|None:
         """Get the instance of this model from the given natural key
 
         If no instance exists, ``None`` is returned.
@@ -998,7 +1002,12 @@ class SensorReading(Base[SensorReadingNaturalKey, _SensorReadingSerializeTD]):
         return session.query(SensorReading).filter_by(sensor_type=sensor_type)
 
     @classmethod
-    def from_data(cls, base_unit: BaseUnit|BaseUnitInfo|int, reading: SensorReadingData, session: Session) -> Self:
+    def from_data(
+        cls,
+        base_unit: BaseUnit|BaseUnitInfo|int,
+        reading: SensorReadingData[SensorType],
+        session: Session
+    ) -> Self:
         """Create an instance of this model from a :class:`.types.SensorReading` instance
         """
         if isinstance(base_unit, BaseUnitInfo):
@@ -1012,7 +1021,7 @@ class SensorReading(Base[SensorReadingNaturalKey, _SensorReadingSerializeTD]):
             value=reading.value,
         )
 
-    def to_data(self) -> SensorReadingData:
+    def to_data(self) -> SensorReadingData[SensorType]:
         """Convert this instance to a :class:`.types.SensorReading` instance
         """
         assert self.timestamp.tzinfo is not None, "SensorReading timestamp must be timezone-aware"

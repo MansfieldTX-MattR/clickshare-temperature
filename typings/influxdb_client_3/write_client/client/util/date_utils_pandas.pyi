@@ -1,0 +1,6 @@
+from influxdb_client_3.write_client.client.util.date_utils import DateHelper as DateHelper
+from influxdb_client_3.write_client.extras import pd as pd
+
+class PandasDateTimeHelper(DateHelper):
+    def parse_date(self, date_string: str): ...
+    def to_nanoseconds(self, delta): ...

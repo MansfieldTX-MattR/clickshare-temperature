@@ -1,6 +1,6 @@
 from __future__ import annotations
 import io
-from typing import Self, NamedTuple, TypedDict, NotRequired, Iterator, Unpack
+from typing import Self, NamedTuple, TypedDict, NotRequired, Iterator, Unpack, Any
 from pathlib import Path
 import tarfile
 import gzip
@@ -30,7 +30,7 @@ class TmpDir:
     The directory and its contents will be automatically deleted when the context is exited.
     """
     def __init__(self) -> None:
-        self._tmpdir: tempfile.TemporaryDirectory|None = None
+        self._tmpdir: tempfile.TemporaryDirectory[str]|None = None
         self._tmppath: Path|None = None
 
     @property
@@ -53,7 +53,12 @@ class TmpDir:
     def __enter__(self) -> Path:
         return self.open()
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def __exit__(
+        self,
+        exc_type: type[BaseException]|None,
+        exc_val: BaseException|None,
+        exc_tb: Any|None
+    ) -> None:
         self.close()
 
 
@@ -126,12 +131,12 @@ class LogFile:
             entries=entries,
         )
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[LogEntry]:
         if not self.entries:
             self.parse_entries()
         yield from self.values()
 
-    def __len__(self):
+    def __len__(self) -> int:
         if not self.entries:
             self.parse_entries()
         return len(self.entries)
@@ -396,7 +401,7 @@ class LogArchive:
                 entries_seen.add(entry.serialize_str())
                 yield entry
 
-    def combine_entries_with(self, other: LogArchive) -> LogArchive:
+    def combine_entries_with(self, other: Self) -> Self:
         """Combine the log entries from this archive with another archive, returning a new LogArchive.
 
         The combined archive will contain all unique log entries from both archives, ordered by timestamp.
@@ -408,7 +413,7 @@ class LogArchive:
                 continue
             combined_entries.append(entry)
         combined_entries.sort(key=lambda e: e.timestamp)
-        combined_archive = LogArchive()
+        combined_archive = self.__class__()
         log_file = LogFile(filename=Path("info"), index=0, entries=combined_entries)
         combined_archive.log_files.append(log_file)
         return combined_archive
@@ -420,10 +425,10 @@ class LogArchive:
                 return True
         return False
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[LogFile]:
         return iter(self.log_files)
 
-    def __len__(self):
+    def __len__(self) -> int:
         return len(self.log_files)
 
     def serialize(self) -> _LogArchiveSerializeTD:

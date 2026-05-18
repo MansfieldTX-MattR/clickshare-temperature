@@ -1,3 +1,8 @@
+# mypy: allow-any-generics
+
+# NOTE: the use of "allow-any-generics" is intentional here. The methods
+# used to iterate over the models and their fields are dynamic and cannot be easily
+# expressed with the parameters for `.types.FullySerializedModelTD`.
 from __future__ import annotations
 from typing import Iterator
 import json
@@ -107,7 +112,8 @@ def _serialize_to_json(data: list[FullySerializedModelTD], indent: int|None = 2)
 
 def _deserialize_from_json(json_str: str) -> list[FullySerializedModelTD]:
     """Deserialize a JSON string into a list of fully serialized model data."""
-    return json.loads(json_str)
+    data: list[FullySerializedModelTD] = json.loads(json_str)
+    return data
 
 
 def serialize_database(session: Session, filename: Path|None = None, indent: int|None = 2) -> str:

@@ -1,6 +1,6 @@
 from __future__ import annotations
 import threading
-from typing import ClassVar, Protocol
+from typing import ClassVar, Protocol, TYPE_CHECKING
 
 from sqlalchemy import (
     Engine,
@@ -13,6 +13,9 @@ from sqlalchemy.orm import (
     sessionmaker,
     Session as ORMSession,
 )
+if TYPE_CHECKING:
+    from sqlalchemy.engine.interfaces import DBAPIConnection
+    from sqlalchemy.pool.base import ConnectionPoolEntry
 
 from .base import Base
 
@@ -156,7 +159,10 @@ def get_session() -> ORMSession:
 
 
 @event.listens_for(Engine, "connect")
-def set_sqlite_pragma(dbapi_connection, connection_record):
+def set_sqlite_pragma(
+    dbapi_connection: DBAPIConnection,
+    connection_record: ConnectionPoolEntry
+) -> None:
     # the sqlite3 driver will not set PRAGMA foreign_keys
     # if autocommit=False; set to True temporarily
     ac = dbapi_connection.autocommit

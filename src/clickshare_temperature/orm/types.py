@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Literal, TypedDict, NamedTuple, TypeIs, Self, TYPE_CHECKING
+from typing import Literal, TypedDict, NamedTuple, TypeIs, Self, Any, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .models import ModelTableName
@@ -45,7 +45,7 @@ class RelationshipNaturalKey[K](NamedTuple):
         )
 
     @classmethod
-    def is_relationship_natural_key(cls, data: object) -> TypeIs[RelationshipNaturalKeyTD]:
+    def is_relationship_natural_key(cls, data: object) -> TypeIs[RelationshipNaturalKeyTD[Any]]:
         """Check if a dictionary appears to be a serialized relationship natural key."""
         if not isinstance(data, dict):
             return False
@@ -55,7 +55,7 @@ class RelationshipNaturalKey[K](NamedTuple):
 class _BaseModelSerializeTD[K](TypedDict):
     natural_key: K
 
-class FullySerializedModelTD[DataT: (_BaseModelSerializeTD)](TypedDict):
+class FullySerializedModelTD[DataT: (_BaseModelSerializeTD[Any])](TypedDict):
     """TypedDict for a fully serialized model, including the model's table name and serialized data."""
     model: ModelTableName
     data: DataT

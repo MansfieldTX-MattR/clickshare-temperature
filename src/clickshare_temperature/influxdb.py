@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import NamedTuple, TypedDict, Iterable
+from typing import NamedTuple, TypedDict, Iterable, Self
 import datetime
 import os
 from pathlib import Path
@@ -54,7 +54,7 @@ class LastReadingInfo(NamedTuple):
         }
 
     @classmethod
-    def deserialize(cls, data: LastReadingInfoTD) -> LastReadingInfo:
+    def deserialize(cls, data: LastReadingInfoTD) -> Self:
         """Deserialize a dictionary into an instance
         """
         return cls(
@@ -96,7 +96,7 @@ class LastReadingsInfo(NamedTuple):
             return True
         return reading.timestamp > last_timestamp
 
-    def update_with_reading(self, host_name: str, reading: SensorReading[SensorType]) -> LastReadingsInfo:
+    def update_with_reading(self, host_name: str, reading: SensorReading[SensorType]) -> Self:
         """Update the last readings info with a new reading, returning a new instance with the updated info
         """
         updated_readings = {host: sensors.copy() for host, sensors in self.readings.items()}
@@ -107,7 +107,7 @@ class LastReadingsInfo(NamedTuple):
             sensor=reading.sensor,
             timestamp=reading.timestamp,
         )
-        return LastReadingsInfo(readings=updated_readings)
+        return self.__class__(readings=updated_readings)
 
     @classmethod
     def get_storage_file(cls) -> Path:
@@ -126,13 +126,13 @@ class LastReadingsInfo(NamedTuple):
         output_file.write_text(json.dumps(self.serialize(), indent=2))
 
     @classmethod
-    def load(cls) -> LastReadingsInfo:
+    def load(cls) -> Self:
         """Load the last readings info from a file, or return an empty instance
         if the file does not exist
         """
         input_file = cls.get_storage_file()
         if not input_file.exists():
-            return LastReadingsInfo(readings={})
+            return cls(readings={})
         data = json.loads(input_file.read_text())
         return cls.deserialize(data)
 
@@ -149,7 +149,7 @@ class LastReadingsInfo(NamedTuple):
         }
 
     @classmethod
-    def deserialize(cls, data: LastReadingsInfoTD) -> LastReadingsInfo:
+    def deserialize(cls, data: LastReadingsInfoTD) -> Self:
         """Deserialize a dictionary into an instance
         """
         return cls(
@@ -161,7 +161,7 @@ class LastReadingsInfo(NamedTuple):
         )
 
 
-def reading_to_point(base_unit: BaseUnitInfo, reading: SensorReading) -> Point:
+def reading_to_point(base_unit: BaseUnitInfo, reading: SensorReading[SensorType]) -> Point:
     """Convert a :class:`.SensorReading` to an InfluxDB `Point` for uploading to InfluxDB
     """
     assert reading.timestamp.tzinfo is not None, "Reading timestamp must be timezone-aware"

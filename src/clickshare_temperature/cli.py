@@ -24,7 +24,7 @@ from .utils import ClickColor, click_secho, get_output_file_for_baseunit
 from .click_extra_params import get_extra_params
 
 
-orm_cli: None|click_extra.Group|Callable
+orm_cli: None|click_extra.Group|Callable[..., None]
 try:
     from .orm.cli import cli as orm_cli
 except ModuleNotFoundError as exc:
@@ -105,7 +105,7 @@ input_option_group = click_extra.option_group(
 
 
 @click_extra.group(params=get_extra_params())
-def cli():
+def cli() -> None:
     """CLI for working with ClickShare BaseUnit temperature logs."""
     pass
 
@@ -115,12 +115,12 @@ def cli():
     type=click.Path(exists=True, dir_okay=False, path_type=Path),
 )
 @output_option_group
-def cli_parse(input_file: Path, output_format: OutputFormat, output_file: Path|None):
+def cli_parse(input_file: Path, output_format: OutputFormat, output_file: Path|None) -> None:
     """Parse a log archive and extract temperature readings."""
     parse(input_file, output_format, output_file)
 
 
-def parse(input_file: Path, output_format: OutputFormat, output_file: Path|None):
+def parse(input_file: Path, output_format: OutputFormat, output_file: Path|None) -> None:
     input_file = input_file.expanduser().resolve()
     history = TemperatureHistory.from_archive_file(input_file)
     if output_format == "json":
@@ -165,7 +165,7 @@ def cli_download(
     output_file: Path|None,
     raw_logs: bool,
     upload_influx: bool,
-):
+) -> None:
     """Download logs from the BaseUnit and extract temperature readings."""
     if upload_influx and raw_logs:
         raise ValueError("Cannot use --upload-influx flag when --raw-logs flag is set, because raw logs cannot be parsed for temperature readings.")
@@ -229,7 +229,7 @@ def cli_download_multiple(
     output_dir: Path,
     upload_influx: bool,
     raw_logs: bool,
-):
+) -> None:
     """Download logs from multiple BaseUnits and extract temperature readings."""
     if upload_influx and raw_logs:
         raise ValueError("Cannot use --upload-influx flag when --raw-logs flag is set, because raw logs cannot be parsed for temperature readings.")
@@ -240,7 +240,7 @@ def cli_download_multiple(
     with baseunit_ip_file.open() as f:
         baseunit_ips = [line.strip() for line in f if line.strip()]
 
-    async def run_download(baseunit_ip: str, session: ClientSession):
+    async def run_download(baseunit_ip: str, session: ClientSession) -> None:
         click_secho(f"Processing BaseUnit {baseunit_ip}...", fg="white")
         base_unit = await get_baseunit_info(
             baseunit_ip,
@@ -288,7 +288,7 @@ def cli_download_multiple(
         click_secho(msg, fg=color)
 
 
-    async def run_downloads():
+    async def run_downloads() -> None:
         async with create_session(**DEFAULT_SESSION_OPTIONS) as session:
             tasks = [run_download(baseunit_ip, session) for baseunit_ip in baseunit_ips]
             await asyncio.gather(*tasks)
@@ -308,7 +308,7 @@ async def download(
     request_options: AioHttpRequestOptions|None = None,
     raw_logs: bool = False,
     suppress_click_echo: bool = False,
-):
+) -> tuple[TemperatureHistory|LogArchive, bool]:
     auth = AuthInfo(username=username, password=password)
     if raw_logs:
         if output_file is None:

@@ -1,4 +1,5 @@
 from __future__ import annotations
+from typing import TYPE_CHECKING
 import asyncio
 from pathlib import Path
 import datetime
@@ -9,6 +10,9 @@ import click_extra
 from aiohttp import ClientSession, ClientError
 from sqlalchemy import create_engine as sa_create_engine
 from sqlalchemy.orm import Session
+
+if TYPE_CHECKING:
+    from sqlalchemy.engine import Engine
 
 from ..types import (
     AuthInfo,
@@ -635,7 +639,7 @@ def backfill_influx(db_url: str|None) -> None:
 
 @cli.command()
 def show_db_schema() -> None:
-    def _create_tmp_engine():
+    def _create_tmp_engine() -> Engine:
         return sa_create_engine("sqlite:///:memory:", echo=True)
 
     EngineBuilder.set_builder(_create_tmp_engine)

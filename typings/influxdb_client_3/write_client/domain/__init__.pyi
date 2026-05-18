@@ -1,0 +1,1 @@
+from influxdb_client_3.write_client.domain.write_precision import WritePrecision as WritePrecision
