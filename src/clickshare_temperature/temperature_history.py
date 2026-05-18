@@ -3,6 +3,7 @@ from typing import NamedTuple, TypedDict, Unpack, Self
 import datetime
 from pathlib import Path
 from dataclasses import dataclass, field
+import re
 
 from aiohttp import ClientSession
 
@@ -13,6 +14,9 @@ from .types import (
     SensorType, SensorTypes, AuthInfo, AioHttpSessionOptions, AioHttpRequestOptions,
     BaseUnitInfo, BaseUnitInfoSerializeTD,
 )
+
+CPU_TEMP_PATTERN = re.compile(r"Sensor readout CPUTemperature = (\d+(?:\.\d+)?) C")
+WLAN_TEMP_PATTERN = re.compile(r"Temperature of (wlan\d): (\d+(?:\.\d+)?)")
 
 
 class _SensorReadingSerializeTD[_T: SensorType](TypedDict):
@@ -148,23 +152,18 @@ class TemperatureHistory:
     @classmethod
     def _parse_archive_entry(cls, entry: LogEntry) -> SensorReading[SensorType]|None:
         if entry.process == "CentralStore":
-            s = "Sensor readout CPUTemperature = "
-            if s in entry.message:
-                value = float(entry.message.split(s)[1].rstrip("°C"))
+            cpu_temp_match = CPU_TEMP_PATTERN.search(entry.message)
+            if cpu_temp_match:
+                value = float(cpu_temp_match.group(1))
                 return SensorReading(timestamp=entry.timestamp, sensor="CPU", value=value)
         elif entry.process == "NetworkManager":
-            s = "Temperature of wlan"
-            sensor: SensorType
-            if s in entry.message:
-                if "wlan0" in entry.message:
-                    sensor = "WLAN0"
-                elif "wlan1" in entry.message:
-                    sensor = "WLAN1"
-                else:
+            wlan_temp_match = WLAN_TEMP_PATTERN.search(entry.message)
+            if wlan_temp_match:
+                sensor = wlan_temp_match.group(1).upper()
+                if sensor not in SensorTypes:
                     print(f"Warning: could not determine sensor for NetworkManager entry: {entry.message}")
                     return None
-                s = f"Temperature of {sensor.lower()}: "
-                value = float(entry.message.split(s)[1].rstrip("°C"))
+                value = float(wlan_temp_match.group(2))
                 return SensorReading(timestamp=entry.timestamp, sensor=sensor, value=value)
         return None
 
