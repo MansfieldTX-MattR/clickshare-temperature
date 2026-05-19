@@ -105,13 +105,46 @@ def sample_power_management_response() -> PowerManagementInfo:
         supported_standby_timeouts=["10", "30", "60", "Infinite"],
     )
 
+
+@pytest.fixture
+def sample_power_management_response_multiple(
+    sample_power_management_response: PowerManagementInfo
+) -> list[PowerManagementInfo]:
+    """Fixture that provides multiple PowerManagementInfo objects with different statuses
+    """
+    return [
+        sample_power_management_response,
+        PowerManagementInfo(
+            power_mode="EcoStandby",
+            standby_timeout_string="10",
+            standby_timeout_minutes=10,
+            status="On",
+            supported_statuses=["On", "Standby"],
+            supported_power_modes=["EcoStandby", "NetworkedStandby", "DeepStandby"],
+            supported_standby_timeouts=["10", "30", "60", "Infinite"],
+        ),
+    ]
+
 @pytest.fixture
 def sample_power_management_response_with_timestamp(
-    sample_power_management_response,
+    sample_power_management_response: PowerManagementInfo,
     tzinfo: datetime.tzinfo
 ) -> WithTimeStamp[PowerManagementInfo]:
     timestamp = datetime.datetime(2024, 1, 1, 12, 0, tzinfo=tzinfo)
     return sample_power_management_response, timestamp
+
+
+@pytest.fixture
+def sample_power_management_response_multiple_with_timestamp(
+    sample_power_management_response_multiple: list[PowerManagementInfo],
+    tzinfo: datetime.tzinfo
+) -> list[WithTimeStamp[PowerManagementInfo]]:
+    base_time = datetime.datetime(2024, 1, 1, 12, 0, tzinfo=tzinfo)
+    return [
+        (response, base_time + datetime.timedelta(minutes=i*5))
+        for i, response in enumerate(sample_power_management_response_multiple)
+    ]
+
 
 @pytest.fixture
 def sample_base_unit_status(
@@ -130,6 +163,28 @@ def sample_base_unit_status(
     )
 
 @pytest.fixture
+def sample_base_unit_status_multiple(
+    sample_base_unit_status: BaseUnitStatus,
+) -> list[BaseUnitStatus]:
+    """Fixture that provides multiple BaseUnitStatus objects with different
+    uptimes and sharing statuses
+    """
+    return [
+        sample_base_unit_status,
+        BaseUnitStatus(
+            base_unit=sample_base_unit_status.base_unit,
+            current_uptime=sample_base_unit_status.current_uptime + datetime.timedelta(hours=1),
+            total_uptime=sample_base_unit_status.total_uptime + datetime.timedelta(hours=1),
+            error_code="Ok",
+            error_message=None,
+            first_used=sample_base_unit_status.first_used,
+            in_use=True,
+            sharing=True,
+        ),
+    ]
+
+
+@pytest.fixture
 def sample_base_unit_usage_status(
     sample_base_unit_info: BaseUnitInfo
 ) -> BaseUnitUsageStatus:
@@ -140,6 +195,22 @@ def sample_base_unit_usage_status(
     )
 
 @pytest.fixture
+def sample_base_unit_usage_status_multiple(
+    sample_base_unit_usage_status: BaseUnitUsageStatus,
+) -> list[BaseUnitUsageStatus]:
+    """Fixture that provides multiple BaseUnitUsageStatus objects with different usage statuses
+    """
+    return [
+        sample_base_unit_usage_status,
+        BaseUnitUsageStatus(
+            base_unit=sample_base_unit_usage_status.base_unit,
+            in_use=False,
+            sharing=False,
+        ),
+    ]
+
+
+@pytest.fixture
 def sample_base_unit_usage_status_with_timestamp(
     sample_base_unit_usage_status: BaseUnitUsageStatus,
     tzinfo: datetime.tzinfo
@@ -147,6 +218,17 @@ def sample_base_unit_usage_status_with_timestamp(
     timestamp = datetime.datetime(2024, 1, 1, 12, 0, tzinfo=tzinfo)
     return sample_base_unit_usage_status, timestamp
 
+
+@pytest.fixture
+def sample_base_unit_usage_status_multiple_with_timestamp(
+    sample_base_unit_usage_status_multiple: list[BaseUnitUsageStatus],
+    tzinfo: datetime.tzinfo
+) -> list[WithTimeStamp[BaseUnitUsageStatus]]:
+    base_time = datetime.datetime(2024, 1, 1, 12, 0, tzinfo=tzinfo)
+    return [
+        (status, base_time + datetime.timedelta(minutes=i*5))
+        for i, status in enumerate(sample_base_unit_usage_status_multiple)
+    ]
 
 
 @pytest.fixture
@@ -157,6 +239,17 @@ def sample_base_unit_status_with_timestamp(
     reading_time = datetime.datetime(2024, 1, 1, 12, 0, tzinfo=tzinfo)
     return sample_base_unit_status, reading_time
 
+
+@pytest.fixture
+def sample_base_unit_status_multiple_with_timestamp(
+    sample_base_unit_status_multiple: list[BaseUnitStatus],
+    tzinfo: datetime.tzinfo
+) -> list[WithTimeStamp[BaseUnitStatus]]:
+    base_time = datetime.datetime(2024, 1, 1, 12, 0, tzinfo=tzinfo)
+    return [
+        (status, base_time + datetime.timedelta(minutes=i*5))
+        for i, status in enumerate(sample_base_unit_status_multiple)
+    ]
 
 @pytest.fixture
 def sample_sensor_reading(tzinfo: datetime.tzinfo) -> SensorReading:
