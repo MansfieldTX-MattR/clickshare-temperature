@@ -137,26 +137,26 @@ def sample_sensor_history_models(
 class FullyPopulatedDBData(NamedTuple):
     base_unit: BaseUnitInfo
     identity: BaseUnitIdentity
-    power_management_response: WithTimeStamp[PowerManagementInfo]
-    base_unit_status: WithTimeStamp[BaseUnitStatus]
-    base_unit_usage_status: WithTimeStamp[BaseUnitUsageStatus]
+    power_management_responses: list[WithTimeStamp[PowerManagementInfo]]
+    base_unit_statuses: list[WithTimeStamp[BaseUnitStatus]]
+    base_unit_usage_statuses: list[WithTimeStamp[BaseUnitUsageStatus]]
     temperature_history: TemperatureHistory
 
 @pytest.fixture
 def fully_populated_db_data(
     sample_base_unit_info: BaseUnitInfo,
     sample_base_unit_identity: BaseUnitIdentity,
-    sample_power_management_response_with_timestamp: WithTimeStamp[PowerManagementInfo],
-    sample_base_unit_status_with_timestamp: WithTimeStamp[BaseUnitStatus],
-    sample_base_unit_usage_status_with_timestamp: WithTimeStamp[BaseUnitUsageStatus],
+    sample_power_management_response_multiple_with_timestamp: list[WithTimeStamp[PowerManagementInfo]],
+    sample_base_unit_status_multiple_with_timestamp: list[WithTimeStamp[BaseUnitStatus]],
+    sample_base_unit_usage_status_multiple_with_timestamp: list[WithTimeStamp[BaseUnitUsageStatus]],
     sample_temperature_history: TemperatureHistory
 ) -> FullyPopulatedDBData:
     return FullyPopulatedDBData(
         base_unit=sample_base_unit_info,
         identity=sample_base_unit_identity,
-        power_management_response=sample_power_management_response_with_timestamp,
-        base_unit_status=sample_base_unit_status_with_timestamp,
-        base_unit_usage_status=sample_base_unit_usage_status_with_timestamp,
+        power_management_responses=sample_power_management_response_multiple_with_timestamp,
+        base_unit_statuses=sample_base_unit_status_multiple_with_timestamp,
+        base_unit_usage_statuses=sample_base_unit_usage_status_multiple_with_timestamp,
         temperature_history=sample_temperature_history
     )
 
@@ -176,49 +176,45 @@ def _populate_db_with_data(
     fully_populated_db_data: FullyPopulatedDBData,
 ) -> None:
     src_data = fully_populated_db_data
-    sample_base_unit_status, sample_status_timestamp = src_data.base_unit_status
-
-    base_unit = BaseUnitModel.from_info(src_data.base_unit)
+    base_unit_info = src_data.base_unit
+    base_unit = BaseUnitModel.from_info(base_unit_info)
     db_session.add(base_unit)
     db_session.commit()
 
     identity = BaseUnitIdentityModel.from_data(base_unit, src_data.identity, db_session)
     db_session.add(identity)
 
-    power_settings = PowerManagementSettingsModel.from_data(
+    power_settings_data = src_data.power_management_responses[-1][0]
+    power_settings_model = PowerManagementSettingsModel.from_data(
         base_unit,
-        src_data.power_management_response[0],
+        power_settings_data,
         session=db_session,
     )
-    db_session.add(power_settings)
+    db_session.add(power_settings_model)
 
-    power_status = PowerManagementStatusModel.from_data(
-        base_unit,
-        src_data.power_management_response[0],
-        now=src_data.power_management_response[1],
-    )
-    db_session.add(power_status)
+    for power_status_data, power_status_timestamp in src_data.power_management_responses:
+        power_status_model = PowerManagementStatusModel.from_data(
+            base_unit,
+            power_status_data,
+            now=power_status_timestamp,
+        )
+        db_session.add(power_status_model)
 
-    status = BaseUnitStatusModel.from_data(
-        base_unit,
-        sample_base_unit_status,
-        now=sample_status_timestamp,
-    )
-    db_session.add(status)
-    db_session.commit()
+    for status_data, status_timestamp in src_data.base_unit_statuses:
+        status_model = BaseUnitStatusModel.from_data(
+            base_unit,
+            status_data,
+            now=status_timestamp,
+        )
+        db_session.add(status_model)
 
-    status = db_session.query(BaseUnitStatusModel).filter_by(base_unit_id=base_unit.id).first()
-    assert status is not None
-
-    assert status.timestamp == sample_status_timestamp
-    assert status.first_used == sample_base_unit_status.first_used
-
-    usage_status = BaseUnitUsageStatusModel.from_data(
-        base_unit,
-        src_data.base_unit_usage_status[0],
-        now=src_data.base_unit_usage_status[1]
-    )
-    db_session.add(usage_status)
+    for usage_status_data, usage_status_timestamp in src_data.base_unit_usage_statuses:
+        usage_status_model = BaseUnitUsageStatusModel.from_data(
+            base_unit,
+            usage_status_data,
+            now=usage_status_timestamp,
+        )
+        db_session.add(usage_status_model)
     db_session.commit()
 
     readings = src_data.temperature_history.readings
@@ -663,6 +659,17 @@ def test_sensor_reading_get_by_natural_key(
 
 
 
+def test_fully_populated_db_data(
+    fully_populated_db_data: FullyPopulatedDBData,
+    db_session: Session,
+) -> None:
+    """Test that the fully populated DB data can be correctly added to the database
+    and retrieved, and that the retrieved data matches the source data
+    """
+    _populate_db_with_data(db_session, fully_populated_db_data)
+    check_fully_populated_db_data(fully_populated_db_data, db_session)
+
+
 def test_database_deserialization(
     fully_populated_db_data: FullyPopulatedDBData,
     db_session: Session,
@@ -698,9 +705,16 @@ def test_database_deserialization(
 
     src_data = fully_populated_db_data
     deserialize_database(db_session, serialized_db_json)
+    check_fully_populated_db_data(src_data, db_session)
 
-    assert db_session.query(BaseUnitModel).count() == 1
-    base_unit = db_session.query(BaseUnitModel).first()
+
+def check_fully_populated_db_data(src_data: FullyPopulatedDBData, db_session: Session) -> None:
+    """Check that the data in the database matches the source data
+    """
+    base_unit, base_unit_created = BaseUnitModel.get_or_create(
+        info=src_data.base_unit, session=db_session,
+    )
+    assert not base_unit_created
     assert base_unit is not None
     assert base_unit.hostname == src_data.base_unit.hostname
     assert base_unit.room_name == src_data.base_unit.room_name
@@ -708,37 +722,45 @@ def test_database_deserialization(
 
     assert base_unit.identity.to_data() == src_data.identity
 
-    assert base_unit.power_management_settings.mode == src_data.power_management_response[0].power_mode
-    standby_timeout = src_data.power_management_response[0].standby_timeout_minutes
+    power_settings_data = src_data.power_management_responses[-1][0]
+    assert base_unit.power_management_settings.mode == power_settings_data.power_mode
+    standby_timeout = power_settings_data.standby_timeout_minutes
     assert base_unit.power_management_settings.standby_timeout == standby_timeout
 
-    assert db_session.query(PowerManagementStatusModel).count() == 1
-    power_management_status = db_session.query(PowerManagementStatusModel).filter_by(base_unit_id=base_unit.id).first()
-    assert power_management_status is not None
-    assert power_management_status.power_mode_status == src_data.power_management_response[0].status
-    assert power_management_status.timestamp == src_data.power_management_response[1]
+    assert db_session.query(PowerManagementStatusModel).count() == len(src_data.power_management_responses)
 
-    assert db_session.query(BaseUnitStatusModel).count() == 1
-    status = db_session.query(BaseUnitStatusModel).filter_by(base_unit_id=base_unit.id).first()
-    assert status is not None
+    for power_status_data, power_status_timestamp in src_data.power_management_responses:
+        power_status_model = db_session.query(PowerManagementStatusModel).filter_by(
+            base_unit_id=base_unit.id,
+            timestamp=power_status_timestamp,
+        ).one()
+        assert power_status_model.power_mode_status == power_status_data.status
+        assert power_status_model.timestamp == power_status_timestamp
 
-    assert status.base_unit_id == base_unit.id
-    assert status.current_uptime == int(src_data.base_unit_status[0].current_uptime.total_seconds())
-    assert status.total_uptime == int(src_data.base_unit_status[0].total_uptime.total_seconds())
-    assert status.error_code == src_data.base_unit_status[0].error_code
-    assert status.error_message == src_data.base_unit_status[0].error_message
-    assert status.first_used == src_data.base_unit_status[0].first_used
-    assert status.timestamp == src_data.base_unit_status[1]
+    assert db_session.query(BaseUnitStatusModel).count() == len(src_data.base_unit_statuses)
 
+    for status_data, status_timestamp in src_data.base_unit_statuses:
+        status_model = db_session.query(BaseUnitStatusModel).filter_by(
+            base_unit_id=base_unit.id,
+            timestamp=status_timestamp,
+        ).one()
+        assert status_model.base_unit_id == base_unit.id
+        assert status_model.current_uptime == int(status_data.current_uptime.total_seconds())
+        assert status_model.total_uptime == int(status_data.total_uptime.total_seconds())
+        assert status_model.error_code == status_data.error_code
+        assert status_model.error_message == status_data.error_message
+        assert status_model.first_used == status_data.first_used
+        assert status_model.timestamp == status_timestamp
 
-    assert db_session.query(BaseUnitUsageStatusModel).count() == 1
-    usage_status = db_session.query(BaseUnitUsageStatusModel).filter_by(base_unit_id=base_unit.id).first()
-    assert usage_status is not None
-    assert usage_status.base_unit_id == base_unit.id
-    assert usage_status.in_use == src_data.base_unit_usage_status[0].in_use
-    assert usage_status.sharing == src_data.base_unit_usage_status[0].sharing
-    assert usage_status.timestamp == src_data.base_unit_usage_status[1]
-
+    assert db_session.query(BaseUnitUsageStatusModel).count() == len(src_data.base_unit_usage_statuses)
+    for usage_status_data, usage_status_timestamp in src_data.base_unit_usage_statuses:
+        usage_status_model = db_session.query(BaseUnitUsageStatusModel).filter_by(
+            base_unit_id=base_unit.id,
+            timestamp=usage_status_timestamp,
+        ).one()
+        assert usage_status_model.in_use == usage_status_data.in_use
+        assert usage_status_model.sharing == usage_status_data.sharing
+        assert usage_status_model.timestamp == usage_status_timestamp
 
     readings = db_session.query(SensorReadingModel).all()
     assert len(readings) == len(src_data.temperature_history.readings)
@@ -747,8 +769,7 @@ def test_database_deserialization(
             timestamp=reading_data.timestamp,
             sensor_type=reading_data.sensor,
             base_unit_id=base_unit.id,
-        ).first()
-        assert reading_model is not None
+        ).one()
         assert reading_model.value == reading_data.value
         assert reading_model.to_data() == reading_data
 
