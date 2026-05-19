@@ -31,7 +31,8 @@ from clickshare_temperature.types import (
     BaseUnitInfo,
     BaseUnitStatus,
     BaseUnitUsageStatus,
-    PowerManagementInfo
+    PowerManagementInfo,
+    SensorType,
 )
 
 
@@ -327,7 +328,7 @@ def test_sensor_reading_unique_constraints(db_session, sample_base_unit_info: Ba
 
 
 
-    reading_data = SensorReading(
+    reading_data = SensorReading[SensorType](
         timestamp=datetime.datetime(2024, 1, 1, 12, 0, 0, tzinfo=datetime.timezone.utc),
         sensor="CPU",
         value=50.0,
