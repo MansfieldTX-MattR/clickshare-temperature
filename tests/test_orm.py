@@ -739,7 +739,7 @@ def check_fully_populated_db_data(src_data: FullyPopulatedDBData, db_session: Se
     standby_timeout = power_settings_data.standby_timeout_minutes
     assert base_unit.power_management_settings.standby_timeout == standby_timeout
 
-    assert db_session.query(PowerManagementStatusModel).count() == len(src_data.power_management_responses)
+    assert len(base_unit.power_management_statuses) == len(src_data.power_management_responses)
 
     for power_status_data, power_status_timestamp in src_data.power_management_responses:
         power_status_model = db_session.query(PowerManagementStatusModel).filter_by(
@@ -749,7 +749,7 @@ def check_fully_populated_db_data(src_data: FullyPopulatedDBData, db_session: Se
         assert power_status_model.power_mode_status == power_status_data.status
         assert power_status_model.timestamp == power_status_timestamp
 
-    assert db_session.query(BaseUnitStatusModel).count() == len(src_data.base_unit_statuses)
+    assert len(base_unit.statuses) == len(src_data.base_unit_statuses)
 
     for status_data, status_timestamp in src_data.base_unit_statuses:
         status_model = db_session.query(BaseUnitStatusModel).filter_by(
@@ -764,7 +764,7 @@ def check_fully_populated_db_data(src_data: FullyPopulatedDBData, db_session: Se
         assert status_model.first_used == status_data.first_used
         assert status_model.timestamp == status_timestamp
 
-    assert db_session.query(BaseUnitUsageStatusModel).count() == len(src_data.base_unit_usage_statuses)
+    assert len(base_unit.usage_statuses) == len(src_data.base_unit_usage_statuses)
     for usage_status_data, usage_status_timestamp in src_data.base_unit_usage_statuses:
         usage_status_model = db_session.query(BaseUnitUsageStatusModel).filter_by(
             base_unit_id=base_unit.id,
@@ -774,7 +774,7 @@ def check_fully_populated_db_data(src_data: FullyPopulatedDBData, db_session: Se
         assert usage_status_model.sharing == usage_status_data.sharing
         assert usage_status_model.timestamp == usage_status_timestamp
 
-    readings = db_session.query(SensorReadingModel).all()
+    readings = base_unit.sensor_readings
     assert len(readings) == len(src_data.temperature_history.readings)
     for reading_data in src_data.temperature_history.readings:
         reading_model = db_session.query(SensorReadingModel).filter_by(
