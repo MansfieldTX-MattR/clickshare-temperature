@@ -580,3 +580,33 @@ def test_database_deserialization(
 
     temp_history = base_unit.to_temperature_history_data(db_session)
     assert temp_history.readings == src_data.temperature_history.readings
+
+
+def test_temperature_history_from_log_archive_with_sensor_readings(
+    db_session: Session,
+    log_archive_file: Path,
+    log_entry_sensor_readings: list[SensorReading],
+) -> None:
+    temperature_history = TemperatureHistory.from_archive_file(log_archive_file)
+    expected_readings = log_entry_sensor_readings
+
+    base_unit = BaseUnitModel.from_info(temperature_history.base_unit)
+    db_session.add(base_unit)
+    db_session.commit()
+
+    num_added, num_skipped = base_unit.add_sensor_readings(
+        temperature_history.readings,
+        session=db_session,
+    )
+    assert num_added == len(expected_readings)
+    assert num_skipped == 0
+    db_session.commit()
+
+    persisted = sorted(base_unit.sensor_readings, key=lambda r: (r.timestamp, r.sensor_type))
+    expected = sorted(expected_readings, key=lambda r: (r.timestamp, r.sensor))
+    assert len(persisted) == len(expected)
+    for reading_model, reading_data in zip(persisted, expected, strict=True):
+        assert reading_model.timestamp == reading_data.timestamp
+        assert reading_model.sensor_type == reading_data.sensor
+        assert reading_model.value == reading_data.value
+        assert reading_model.to_data() == reading_data
