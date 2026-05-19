@@ -42,9 +42,9 @@ DtIsoStr = NewType("DtIsoStr", str)
 
 
 type BaseUnitNaturalKey = str
-type BaseUnitIdentityNaturalKey = tuple[BaseUnitNaturalKey, int]
+type BaseUnitIdentityNaturalKey = BaseUnitNaturalKey
 type PowerManagementStatusNaturalKey = tuple[BaseUnitNaturalKey, int]
-type PowerManagementSettingsNaturalKey = tuple[BaseUnitNaturalKey, int]
+type PowerManagementSettingsNaturalKey = BaseUnitNaturalKey
 type BaseUnitStatusNaturalKey = tuple[BaseUnitNaturalKey, int]
 type BaseUnitUsageStatusNaturalKey = tuple[BaseUnitNaturalKey, int]
 type SensorReadingNaturalKey = tuple[BaseUnitNaturalKey, int]
@@ -395,10 +395,7 @@ class BaseUnitIdentity(Base[BaseUnitIdentityNaturalKey, _BaseUnitIdentitySeriali
     def natural_key(self) -> BaseUnitIdentityNaturalKey:
         """Get the natural key for this instance
         """
-        return (
-            self.base_unit.natural_key,
-            self.id,
-        )
+        return self.base_unit.natural_key
 
     @classmethod
     def get_by_natural_key(cls, session: Session, key: BaseUnitIdentityNaturalKey) -> Self|None:
@@ -406,8 +403,7 @@ class BaseUnitIdentity(Base[BaseUnitIdentityNaturalKey, _BaseUnitIdentitySeriali
 
         If no instance exists, ``None`` is returned.
         """
-        base_unit_key, _ = key
-        base_unit = BaseUnit.get_by_natural_key(session, base_unit_key)
+        base_unit = BaseUnit.get_by_natural_key(session, key)
         if base_unit is None:
             return None
         return session.query(cls).filter_by(base_unit_id=base_unit.id).first()
@@ -496,10 +492,7 @@ class PowerManagementSettings(Base[PowerManagementSettingsNaturalKey, _PowerMana
     def natural_key(self) -> PowerManagementSettingsNaturalKey:
         """Get the natural key for this instance
         """
-        return (
-            self.base_unit.natural_key,
-            self.id,
-        )
+        return self.base_unit.natural_key
 
     @classmethod
     def get_by_natural_key(cls, session: Session, key: PowerManagementSettingsNaturalKey) -> Self|None:
@@ -507,8 +500,7 @@ class PowerManagementSettings(Base[PowerManagementSettingsNaturalKey, _PowerMana
 
         If no instance exists, ``None`` is returned.
         """
-        base_unit_key, _ = key
-        base_unit = BaseUnit.get_by_natural_key(session, base_unit_key)
+        base_unit = BaseUnit.get_by_natural_key(session, key)
         if base_unit is None:
             return None
         return session.query(cls).filter_by(base_unit_id=base_unit.id).first()
@@ -607,11 +599,11 @@ class PowerManagementStatus(Base[PowerManagementStatusNaturalKey, _PowerManageme
 
         If no instance exists, ``None`` is returned.
         """
-        base_unit_key, _ = key
+        base_unit_key, pk = key
         base_unit = BaseUnit.get_by_natural_key(session, base_unit_key)
         if base_unit is None:
             return None
-        return session.query(cls).filter_by(base_unit_id=base_unit.id).first()
+        return session.query(cls).filter_by(base_unit_id=base_unit.id, id=pk).first()
 
     def serialize(self) -> _PowerManagementStatusSerializeTD:
         """Serialize this instance to a dictionary for JSON serialization
