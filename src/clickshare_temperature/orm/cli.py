@@ -103,7 +103,9 @@ def backfill_from_files(directory: Path, db_url: str|None) -> None:
         for filepath in directory.glob("*.txt"):
             click_secho(f"Processing file {filepath}...", fg="blue")
             base_unit_info = get_baseunit_from_filename(filepath)
-            base_unit = session.query(BaseUnit).filter_by(hostname=base_unit_info.hostname).first()
+            base_unit = session.query(BaseUnit).filter_by(
+                hostname=base_unit_info.hostname
+            ).one_or_none()
             if base_unit is None:
                 base_unit = BaseUnit(
                     hostname=base_unit_info.hostname,
@@ -118,8 +120,9 @@ def backfill_from_files(directory: Path, db_url: str|None) -> None:
         for filepath in directory.glob("*.txt"):
             click_secho(f"Processing file {filepath}...", fg="blue")
             base_unit_info = get_baseunit_from_filename(filepath)
-            base_unit = session.query(BaseUnit).filter_by(hostname=base_unit_info.hostname).first()
-            assert base_unit is not None, f"BaseUnit with hostname '{base_unit_info.hostname}' should exist in the database"
+            base_unit = session.query(BaseUnit).filter_by(
+                hostname=base_unit_info.hostname
+            ).one()
             temperature_history = TemperatureHistory.deserialize_str(base_unit_info, filepath.read_text())
             num_added, num_skipped = base_unit.add_sensor_readings(temperature_history.readings, session)
             click_secho(
@@ -164,7 +167,9 @@ def add_baseunit(base_unit_ips: tuple[str, ...], db_url: str|None, username: str
     base_unit_infos = asyncio.run(get_all_baseunit_infos())
     with get_db_session() as session:
         for baseunit_info in base_unit_infos:
-            base_unit = session.query(BaseUnit).filter_by(hostname=baseunit_info.hostname).first()
+            base_unit = session.query(BaseUnit).filter_by(
+                hostname=baseunit_info.hostname
+            ).one_or_none()
             if base_unit is not None:
                 if base_unit.room_name != baseunit_info.room_name or base_unit.ip_address != baseunit_info.ip_address:
                     confirm_msg = '\n'.join([

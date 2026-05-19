@@ -207,8 +207,9 @@ def _populate_db_with_data(
     db_session.add(status)
     db_session.commit()
 
-    status = db_session.query(BaseUnitStatusModel).filter_by(base_unit_id=base_unit.id).first()
-    assert status is not None
+    status = db_session.query(BaseUnitStatusModel).filter_by(
+        base_unit_id=base_unit.id
+    ).one()
 
     assert status.timestamp == sample_status_timestamp
     assert status.first_used == sample_base_unit_status.first_used
@@ -379,8 +380,9 @@ def test_base_unit_status_from_status(
     db_session.add(status)
     db_session.commit()
 
-    status = db_session.query(BaseUnitStatusModel).filter_by(base_unit_id=base_unit.id).first()
-    assert status is not None
+    status = db_session.query(BaseUnitStatusModel).filter_by(
+        base_unit_id=base_unit.id
+    ).one()
 
     assert status.base_unit_id == base_unit.id
     assert status.current_uptime == int(sample_base_unit_status.current_uptime.total_seconds())
@@ -526,8 +528,7 @@ def test_database_deserialization(
     deserialize_database(db_session, serialized_db_json)
 
     assert db_session.query(BaseUnitModel).count() == 1
-    base_unit = db_session.query(BaseUnitModel).first()
-    assert base_unit is not None
+    base_unit = db_session.query(BaseUnitModel).one()
     assert base_unit.hostname == src_data.base_unit.hostname
     assert base_unit.room_name == src_data.base_unit.room_name
     assert base_unit.ip_address == src_data.base_unit.ip_address
@@ -539,14 +540,12 @@ def test_database_deserialization(
     assert base_unit.power_management_settings.standby_timeout == standby_timeout
 
     assert db_session.query(PowerManagementStatusModel).count() == 1
-    power_management_status = db_session.query(PowerManagementStatusModel).filter_by(base_unit_id=base_unit.id).first()
-    assert power_management_status is not None
+    power_management_status = db_session.query(PowerManagementStatusModel).filter_by(base_unit_id=base_unit.id).one()
     assert power_management_status.power_mode_status == src_data.power_management_response[0].status
     assert power_management_status.timestamp == src_data.power_management_response[1]
 
     assert db_session.query(BaseUnitStatusModel).count() == 1
-    status = db_session.query(BaseUnitStatusModel).filter_by(base_unit_id=base_unit.id).first()
-    assert status is not None
+    status = db_session.query(BaseUnitStatusModel).filter_by(base_unit_id=base_unit.id).one()
 
     assert status.base_unit_id == base_unit.id
     assert status.current_uptime == int(src_data.base_unit_status[0].current_uptime.total_seconds())
@@ -558,8 +557,9 @@ def test_database_deserialization(
 
 
     assert db_session.query(BaseUnitUsageStatusModel).count() == 1
-    usage_status = db_session.query(BaseUnitUsageStatusModel).filter_by(base_unit_id=base_unit.id).first()
-    assert usage_status is not None
+    usage_status = db_session.query(BaseUnitUsageStatusModel).filter_by(
+        base_unit_id=base_unit.id
+    ).one()
     assert usage_status.base_unit_id == base_unit.id
     assert usage_status.in_use == src_data.base_unit_usage_status[0].in_use
     assert usage_status.sharing == src_data.base_unit_usage_status[0].sharing
@@ -573,8 +573,7 @@ def test_database_deserialization(
             timestamp=reading_data.timestamp,
             sensor_type=reading_data.sensor,
             base_unit_id=base_unit.id,
-        ).first()
-        assert reading_model is not None
+        ).one()
         assert reading_model.value == reading_data.value
         assert reading_model.to_data() == reading_data
 
