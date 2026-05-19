@@ -1,6 +1,7 @@
 
 import datetime
 from zoneinfo import ZoneInfo
+from pathlib import Path
 
 import pytest
 
@@ -13,7 +14,52 @@ from clickshare_temperature.types import (
 )
 from clickshare_temperature.temperature_history import TemperatureHistory, SensorReading
 
+from log_data_helpers import (
+    LOG_ARCHIVE_FILE,
+    LOG_ARCHIVE_EXPECTED_FILES,
+    LOG_ENTRY_TEST_CASES,
+    LOG_ENTRY_SENSOR_READINGS,
+    LogEntryTestCase,
+)
+
+
 type WithTimeStamp[T] = tuple[T, datetime.datetime]
+
+
+@pytest.fixture(params=LOG_ENTRY_TEST_CASES)
+def log_entry_test_case(request: pytest.FixtureRequest) -> LogEntryTestCase:
+    """Fixture that provides each LogEntryTestCase as a separate test parameter
+    """
+    return request.param
+
+
+@pytest.fixture
+def log_entry_test_cases() -> list[LogEntryTestCase]:
+    """Fixture that provides all LogEntryTestCases as a list
+    """
+    return LOG_ENTRY_TEST_CASES
+
+
+@pytest.fixture
+def log_entry_sensor_readings() -> list[SensorReading]:
+    """Fixture that provides all SensorReadings as a list
+    """
+    return LOG_ENTRY_SENSOR_READINGS
+
+
+@pytest.fixture
+def log_archive_expected_files() -> list[Path]:
+    """Fixture that provides the expected files in the log archive as a list
+    """
+    return LOG_ARCHIVE_EXPECTED_FILES
+
+
+@pytest.fixture
+def log_archive_file() -> Path:
+    """Fixture that provides the path to the log archive file used for testing
+    """
+    return LOG_ARCHIVE_FILE
+
 
 @pytest.fixture(
     params=[

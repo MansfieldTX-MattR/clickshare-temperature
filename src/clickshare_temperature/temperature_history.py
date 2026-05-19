@@ -17,6 +17,7 @@ from .types import (
 
 CPU_TEMP_PATTERN = re.compile(r"Sensor readout CPUTemperature = (\d+(?:\.\d+)?) C")
 WLAN_TEMP_PATTERN = re.compile(r"Temperature of (wlan\d): (\d+(?:\.\d+)?)")
+CPU_FAN_SPEED_PATTERN = re.compile(r"Sensor readout CPUFanSpeed = (\d+(?:\.\d+)?) RPM")
 
 
 class _SensorReadingSerializeTD[_T: SensorType](TypedDict):
@@ -33,6 +34,14 @@ class SensorReading[T: SensorType](NamedTuple):
     """Type of sensor that the reading is from."""
     value: float
     """Temperature value in degrees Celsius."""
+
+    @property
+    def unit(self) -> str:
+        """Get the unit for this sensor reading (e.g. "°C", "RPM", etc.)
+        """
+        if self.sensor == "CPU_FAN":
+            return "rpm"
+        return "°C"
 
     def as_timezone(self, tzinfo: datetime.tzinfo) -> SensorReading[T]:
         """Return a copy of this SensorReading with the timestamp converted to the given timezone."""
@@ -60,7 +69,7 @@ class SensorReading[T: SensorType](NamedTuple):
 
     def serialize_str(self) -> str:
         """Serialize the SensorReading to a string."""
-        return f"{self.timestamp.isoformat()} {self.sensor} {self.value:.2f}°C"
+        return f"{self.timestamp.isoformat()} {self.sensor} {self.value:.2f}{self.unit}"
 
     @staticmethod
     def deserialize_str(s: str) -> SensorReading[SensorType]:
@@ -70,7 +79,7 @@ class SensorReading[T: SensorType](NamedTuple):
         sensor = sensor_str
         assert sensor in SensorTypes, f"Invalid sensor type: {sensor_str}"
         assert sensor is not None
-        value = float(value_str.rstrip("°C"))
+        value = float(value_str.rstrip("°C").rstrip("rpm"))
         return SensorReading(timestamp=timestamp, sensor=sensor, value=value)
 
 
@@ -156,6 +165,10 @@ class TemperatureHistory:
             if cpu_temp_match:
                 value = float(cpu_temp_match.group(1))
                 return SensorReading(timestamp=entry.timestamp, sensor="CPU", value=value)
+            cpu_fan_match = CPU_FAN_SPEED_PATTERN.search(entry.message)
+            if cpu_fan_match:
+                value = float(cpu_fan_match.group(1))
+                return SensorReading(timestamp=entry.timestamp, sensor="CPU_FAN", value=value)
         elif entry.process == "NetworkManager":
             wlan_temp_match = WLAN_TEMP_PATTERN.search(entry.message)
             if wlan_temp_match:
@@ -200,7 +213,10 @@ class TemperatureHistory:
     def serialize_current_str(self) -> str:
         """Serialize the most recent readings for each sensor to a string."""
         current_readings = self.get_current()
-        return "\n".join(f"{reading.sensor}: {reading.value}°C" for reading in current_readings.values())
+        return "\n".join(
+            f"{reading.sensor}: {reading.value}{reading.unit}"
+            for reading in current_readings.values()
+        )
 
     def __contains__(self, reading: SensorReading[SensorType]) -> bool:
         """Check if a SensorReading is in the TemperatureHistory."""
@@ -210,7 +226,7 @@ class TemperatureHistory:
             return False
         existing_reading = self.readings_by_timestamp[reading.timestamp][reading.sensor]
         if existing_reading.value != reading.value:
-            print(f"Warning: conflicting readings for {reading.sensor} at {reading.timestamp}: {existing_reading.value}°C vs {reading.value}°C. Considering them as the same reading for containment check.")
+            print(f"Warning: conflicting readings for {reading.sensor} at {reading.timestamp}: {existing_reading.value} vs {reading.value}. Considering them as the same reading for containment check.")
         return True
 
 
