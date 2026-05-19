@@ -599,11 +599,11 @@ class PowerManagementStatus(Base[PowerManagementStatusNaturalKey, _PowerManageme
 
         If no instance exists, ``None`` is returned.
         """
-        base_unit_key, _ = key
+        base_unit_key, pk = key
         base_unit = BaseUnit.get_by_natural_key(session, base_unit_key)
         if base_unit is None:
             return None
-        return session.query(cls).filter_by(base_unit_id=base_unit.id).first()
+        return session.query(cls).filter_by(base_unit_id=base_unit.id, id=pk).first()
 
     def serialize(self) -> _PowerManagementStatusSerializeTD:
         """Serialize this instance to a dictionary for JSON serialization
