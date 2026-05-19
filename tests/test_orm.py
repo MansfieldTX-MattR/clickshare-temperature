@@ -184,7 +184,13 @@ def _populate_db_with_data(
     identity = BaseUnitIdentityModel.from_data(base_unit, src_data.identity, db_session)
     db_session.add(identity)
 
-    power_settings_data = src_data.power_management_responses[-1][0]
+    latest_power_status = max(
+        src_data.power_management_responses,
+        key=lambda item: item[1],
+        default=None,
+    )
+    assert latest_power_status is not None
+    power_settings_data, _ = latest_power_status
     power_settings_model = PowerManagementSettingsModel.from_data(
         base_unit,
         power_settings_data,
@@ -722,7 +728,13 @@ def check_fully_populated_db_data(src_data: FullyPopulatedDBData, db_session: Se
 
     assert base_unit.identity.to_data() == src_data.identity
 
-    power_settings_data = src_data.power_management_responses[-1][0]
+    latest_power_status = max(
+        src_data.power_management_responses,
+        key=lambda item: item[1],
+        default=None,
+    )
+    assert latest_power_status is not None
+    power_settings_data, _ = latest_power_status
     assert base_unit.power_management_settings.mode == power_settings_data.power_mode
     standby_timeout = power_settings_data.standby_timeout_minutes
     assert base_unit.power_management_settings.standby_timeout == standby_timeout
