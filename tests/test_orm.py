@@ -488,6 +488,180 @@ def test_sensor_reading_round_trip(
 
 
 
+def test_base_unit_identity_get_by_natural_key(
+    db_session: Session,
+    sample_base_unit_info: BaseUnitInfo,
+    sample_base_unit_identity: BaseUnitIdentity,
+) -> None:
+    base_unit = BaseUnitModel.from_info(sample_base_unit_info)
+    db_session.add(base_unit)
+    db_session.commit()
+
+    identity_model = BaseUnitIdentityModel.from_data(base_unit, sample_base_unit_identity, db_session)
+    db_session.add(identity_model)
+    db_session.commit()
+
+    natural_key = identity_model.natural_key
+    retrieved = BaseUnitIdentityModel.get_by_natural_key(db_session, natural_key)
+    assert retrieved is not None
+    assert retrieved.id == identity_model.id
+    assert retrieved.base_unit_id == identity_model.base_unit_id == base_unit.id
+    assert retrieved.to_data() == identity_model.to_data() == sample_base_unit_identity
+
+
+
+def test_power_settings_get_by_natural_key(
+    db_session: Session,
+    sample_base_unit_info: BaseUnitInfo,
+    sample_power_management_response: PowerManagementInfo,
+) -> None:
+    base_unit = BaseUnitModel.from_info(sample_base_unit_info)
+    db_session.add(base_unit)
+    db_session.commit()
+
+    settings = PowerManagementSettingsModel.from_data(
+        base_unit,
+        sample_power_management_response,
+        session=db_session,
+    )
+    db_session.add(settings)
+    db_session.commit()
+
+    natural_key = settings.natural_key
+    retrieved = PowerManagementSettingsModel.get_by_natural_key(db_session, natural_key)
+    assert retrieved is not None
+    assert retrieved.id == settings.id
+    assert retrieved.base_unit_id == settings.base_unit_id == base_unit.id
+    assert retrieved.mode == settings.mode == sample_power_management_response.power_mode
+    assert retrieved.standby_timeout == settings.standby_timeout == sample_power_management_response.standby_timeout_minutes
+
+
+def test_power_management_status_get_by_natural_key(
+    db_session: Session,
+    sample_base_unit_info: BaseUnitInfo,
+    sample_power_management_response_multiple_with_timestamp: list[WithTimeStamp[PowerManagementInfo]],
+) -> None:
+    src_data = sample_power_management_response_multiple_with_timestamp
+    base_unit = BaseUnitModel.from_info(sample_base_unit_info)
+    db_session.add(base_unit)
+    db_session.commit()
+
+    for power_status_data, power_status_timestamp in src_data:
+        power_status_model = PowerManagementStatusModel.from_data(
+            base_unit,
+            power_status_data,
+            now=power_status_timestamp,
+        )
+        db_session.add(power_status_model)
+    db_session.commit()
+
+    persisted_models = sorted(base_unit.power_management_statuses, key=lambda s: s.timestamp)
+    expected_data = sorted(src_data, key=lambda item: item[1])
+    assert len(persisted_models) == len(expected_data)
+    for model, (data, timestamp) in zip(persisted_models, expected_data, strict=True):
+        natural_key = model.natural_key
+        retrieved = PowerManagementStatusModel.get_by_natural_key(db_session, natural_key)
+        assert retrieved is not None
+        assert retrieved.id == model.id
+        assert retrieved.base_unit_id == model.base_unit_id == base_unit.id
+        assert retrieved.timestamp == model.timestamp == timestamp
+        assert retrieved.power_mode_status == model.power_mode_status == data.status
+
+
+def test_base_unit_status_get_by_natural_key(
+    db_session: Session,
+    sample_base_unit_info: BaseUnitInfo,
+    sample_base_unit_status_multiple_with_timestamp: list[WithTimeStamp[BaseUnitStatus]],
+) -> None:
+    src_data = sample_base_unit_status_multiple_with_timestamp
+    base_unit = BaseUnitModel.from_info(sample_base_unit_info)
+    db_session.add(base_unit)
+    db_session.commit()
+
+    for status_data, status_timestamp in src_data:
+        status_model = BaseUnitStatusModel.from_data(
+            base_unit,
+            status_data,
+            now=status_timestamp,
+        )
+        db_session.add(status_model)
+    db_session.commit()
+
+    persisted_models = sorted(base_unit.statuses, key=lambda s: s.timestamp)
+    expected_data = sorted(src_data, key=lambda item: item[1])
+    assert len(persisted_models) == len(expected_data)
+    for model, (data, timestamp) in zip(persisted_models, expected_data, strict=True):
+        natural_key = model.natural_key
+        retrieved = BaseUnitStatusModel.get_by_natural_key(db_session, natural_key)
+        assert retrieved is not None
+        assert retrieved.id == model.id
+        assert retrieved.base_unit_id == model.base_unit_id == base_unit.id
+        assert retrieved.timestamp == model.timestamp == timestamp
+        assert retrieved.to_data() == model.to_data() == data
+
+
+def test_base_unit_usage_status_get_by_natural_key(
+    db_session: Session,
+    sample_base_unit_info: BaseUnitInfo,
+    sample_base_unit_usage_status_multiple_with_timestamp: list[WithTimeStamp[BaseUnitUsageStatus]],
+) -> None:
+    src_data = sample_base_unit_usage_status_multiple_with_timestamp
+    base_unit = BaseUnitModel.from_info(sample_base_unit_info)
+    db_session.add(base_unit)
+    db_session.commit()
+
+    for usage_status_data, usage_status_timestamp in src_data:
+        usage_status_model = BaseUnitUsageStatusModel.from_data(
+            base_unit,
+            usage_status_data,
+            now=usage_status_timestamp,
+        )
+        db_session.add(usage_status_model)
+    db_session.commit()
+
+    persisted_models = sorted(base_unit.usage_statuses, key=lambda s: s.timestamp)
+    expected_data = sorted(src_data, key=lambda item: item[1])
+    assert len(persisted_models) == len(expected_data)
+    for model, (data, timestamp) in zip(persisted_models, expected_data, strict=True):
+        natural_key = model.natural_key
+        retrieved = BaseUnitUsageStatusModel.get_by_natural_key(db_session, natural_key)
+        assert retrieved is not None
+        assert retrieved.id == model.id
+        assert retrieved.base_unit_id == model.base_unit_id == base_unit.id
+        assert retrieved.timestamp == model.timestamp == timestamp
+        assert retrieved.to_data() == model.to_data() == data
+
+
+def test_sensor_reading_get_by_natural_key(
+    db_session: Session,
+    sample_base_unit_info: BaseUnitInfo,
+    sample_temperature_history: TemperatureHistory
+) -> None:
+    base_unit = BaseUnitModel.from_info(sample_base_unit_info)
+    db_session.add(base_unit)
+    db_session.commit()
+
+    num_added, num_skipped = base_unit.add_sensor_readings(
+        sample_temperature_history.readings,
+        session=db_session,
+    )
+    assert num_added == len(sample_temperature_history.readings)
+    assert num_skipped == 0
+    db_session.commit()
+
+    persisted_models = sorted(base_unit.sensor_readings, key=lambda r: (r.timestamp, r.sensor_type))
+    expected_data = sorted(sample_temperature_history.readings, key=lambda r: (r.timestamp, r.sensor))
+    assert len(persisted_models) == len(expected_data)
+    for model, data in zip(persisted_models, expected_data, strict=True):
+        assert model.to_data() == data
+        natural_key = model.natural_key
+        retrieved = SensorReadingModel.get_by_natural_key(db_session, natural_key)
+        assert retrieved is not None
+        assert retrieved.id == model.id
+        assert retrieved.base_unit_id == model.base_unit_id == base_unit.id
+        assert retrieved.to_data() == data
+
+
 
 def test_database_deserialization(
     fully_populated_db_data: FullyPopulatedDBData,
