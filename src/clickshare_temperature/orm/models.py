@@ -177,7 +177,7 @@ class BaseUnit(Base[BaseUnitNaturalKey, _BaseUnitSerializeTD]):
 
         If no instance exists, ``None`` is returned.
         """
-        return session.query(cls).filter_by(hostname=key).first()
+        return session.query(cls).filter_by(hostname=key).one_or_none()
 
     def serialize(self) -> _BaseUnitSerializeTD:
         """Serialize this instance to a dictionary for JSON serialization
@@ -215,7 +215,9 @@ class BaseUnit(Base[BaseUnitNaturalKey, _BaseUnitSerializeTD]):
         or create it if it doesn't exist
         """
         created = False
-        instance = session.query(cls).filter(cls.hostname == info.hostname).first()
+        instance = session.query(cls).filter(
+            cls.hostname == info.hostname
+        ).one_or_none()
         if instance is not None:
             changed = False
             if instance.ip_address != info.ip_address:
@@ -322,7 +324,7 @@ class BaseUnit(Base[BaseUnitNaturalKey, _BaseUnitSerializeTD]):
             base_unit_id=self.id,
             timestamp=timestamp,
             sensor_type=reading.sensor,
-        ).first()
+        ).one_or_none()
         return existing_reading is not None
 
     def get_sensor_readings(
@@ -406,7 +408,9 @@ class BaseUnitIdentity(Base[BaseUnitIdentityNaturalKey, _BaseUnitIdentitySeriali
         base_unit = BaseUnit.get_by_natural_key(session, key)
         if base_unit is None:
             return None
-        return session.query(cls).filter_by(base_unit_id=base_unit.id).first()
+        return session.query(cls).filter_by(
+            base_unit_id=base_unit.id
+        ).one_or_none()
 
     def serialize(self) -> _BaseUnitIdentitySerializeTD:
         """Serialize this instance to a dictionary for JSON serialization
@@ -503,7 +507,7 @@ class PowerManagementSettings(Base[PowerManagementSettingsNaturalKey, _PowerMana
         base_unit = BaseUnit.get_by_natural_key(session, key)
         if base_unit is None:
             return None
-        return session.query(cls).filter_by(base_unit_id=base_unit.id).first()
+        return session.query(cls).filter_by(base_unit_id=base_unit.id).one_or_none()
 
     def serialize(self) -> _PowerManagementSettingsSerializeTD:
         """Serialize this instance to a dictionary for JSON serialization
@@ -603,7 +607,7 @@ class PowerManagementStatus(Base[PowerManagementStatusNaturalKey, _PowerManageme
         base_unit = BaseUnit.get_by_natural_key(session, base_unit_key)
         if base_unit is None:
             return None
-        return session.query(cls).filter_by(base_unit_id=base_unit.id, id=pk).first()
+        return session.query(cls).filter_by(base_unit_id=base_unit.id, id=pk).one_or_none()
 
     def serialize(self) -> _PowerManagementStatusSerializeTD:
         """Serialize this instance to a dictionary for JSON serialization
@@ -738,7 +742,9 @@ class BaseUnitStatus(Base[BaseUnitStatusNaturalKey, _BaseUnitStatusSerializeTD])
         base_unit = BaseUnit.get_by_natural_key(session, base_unit_hostname)
         if base_unit is None:
             return None
-        return session.query(cls).filter_by(base_unit_id=base_unit.id, id=pk).first()
+        return session.query(cls).filter_by(
+            base_unit_id=base_unit.id, id=pk
+        ).one_or_none()
 
     @property
     def current_uptime_timedelta(self) -> datetime.timedelta:
@@ -826,7 +832,9 @@ class BaseUnitUsageStatus(Base[BaseUnitUsageStatusNaturalKey, _BaseUnitUsageStat
         base_unit = BaseUnit.get_by_natural_key(session, base_unit_hostname)
         if base_unit is None:
             return None
-        return session.query(cls).filter_by(base_unit_id=base_unit.id, id=pk).first()
+        return session.query(cls).filter_by(
+            base_unit_id=base_unit.id, id=pk
+        ).one_or_none()
 
     def serialize(self) -> _BaseUnitUsageStatusSerializeTD:
         """Serialize this instance to a dictionary for JSON serialization
@@ -982,7 +990,9 @@ class SensorReading(Base[SensorReadingNaturalKey, _SensorReadingSerializeTD]):
         base_unit = BaseUnit.get_by_natural_key(session, base_unit_hostname)
         if base_unit is None:
             return None
-        obj = session.query(SensorReading).filter_by(base_unit_id=base_unit.id, id=pk).first()
+        obj = session.query(SensorReading).filter_by(
+            base_unit_id=base_unit.id, id=pk
+        ).one_or_none()
         if obj is not None:
             assert obj.id == pk, f"Expected to find SensorReading with ID {pk}, but found {obj.id}"
         return obj

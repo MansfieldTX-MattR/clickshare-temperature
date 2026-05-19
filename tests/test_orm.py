@@ -31,7 +31,8 @@ from clickshare_temperature.types import (
     BaseUnitInfo,
     BaseUnitStatus,
     BaseUnitUsageStatus,
-    PowerManagementInfo
+    PowerManagementInfo,
+    SensorType,
 )
 
 
@@ -328,7 +329,7 @@ def test_sensor_reading_unique_constraints(db_session, sample_base_unit_info: Ba
 
 
 
-    reading_data = SensorReading(
+    reading_data = SensorReading[SensorType](
         timestamp=datetime.datetime(2024, 1, 1, 12, 0, 0, tzinfo=datetime.timezone.utc),
         sensor="CPU",
         value=50.0,
@@ -381,8 +382,9 @@ def test_base_unit_status_from_status(
     db_session.add(status)
     db_session.commit()
 
-    status = db_session.query(BaseUnitStatusModel).filter_by(base_unit_id=base_unit.id).first()
-    assert status is not None
+    status = db_session.query(BaseUnitStatusModel).filter_by(
+        base_unit_id=base_unit.id
+    ).one()
 
     assert status.base_unit_id == base_unit.id
     assert status.current_uptime == int(sample_base_unit_status.current_uptime.total_seconds())
