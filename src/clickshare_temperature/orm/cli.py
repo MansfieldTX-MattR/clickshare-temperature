@@ -1,6 +1,7 @@
 from __future__ import annotations
-from typing import TYPE_CHECKING
+from typing import Callable, TYPE_CHECKING
 import asyncio
+import warnings
 from pathlib import Path
 import datetime
 
@@ -51,6 +52,70 @@ from ..temperature_history import TemperatureHistory
 from ..utils import click_secho, get_baseunit_from_filename, is_valid_ip_or_hostname
 from ..click_extra_params import get_extra_params
 from .. import timezone
+
+
+class CommunicationError(UserWarning):
+    """Warning raised when there is a communication error with a BaseUnit
+    """
+
+
+COMMUNICATION_ERROR_EXIT_CODE: int = 2
+"""Exit code to use when a :class:`CommunicationError` is raised and causes the program to exit"""
+
+
+def catch_communication_errors[**P, ResultT](
+    func: Callable[P, ResultT],
+    *args: P.args,
+    **kwargs: P.kwargs
+) -> tuple[ResultT, bool]:
+    """Helper function to catch :class:`CommunicationError`
+
+    Arguments:
+        func: The function to call
+        *args: Positional arguments to pass to the function
+        **kwargs: Keyword arguments to pass to the function
+
+    Returns:
+        A tuple of:
+
+        - **result**: The result of the function call
+        - **had_error**: A boolean indicating whether a CommunicationError was caught
+    """
+    with warnings.catch_warnings(record=True) as w:
+        warnings.simplefilter("always", CommunicationError)
+        result = func(*args, **kwargs)
+        had_error = False
+        for warning in w:
+            if issubclass(warning.category, CommunicationError):
+                click_secho(str(warning.message), fg="red")
+                had_error = True
+        return result, had_error
+
+
+def raise_communication_errors[**P, ResultT](
+    func: Callable[P, ResultT],
+    *args: P.args,
+    **kwargs: P.kwargs
+) -> ResultT:
+    """Helper function to catch :class:`CommunicationError` and raise a SystemExit
+    if any are found
+
+    Arguments:
+        func: The function to call
+        *args: Positional arguments to pass to the function
+        **kwargs: Keyword arguments to pass to the function
+
+    Returns the result of the function call if no CommunicationErrors were caught
+
+    Raises:
+        SystemExit: If any CommunicationErrors were caught, with an exit code of
+            :data:`COMMUNICATION_ERROR_EXIT_CODE`
+    """
+    result, had_error = catch_communication_errors(func, *args, **kwargs)
+    if had_error:
+        raise SystemExit(COMMUNICATION_ERROR_EXIT_CODE)
+    return result
+
 
 auth_option_group = click_extra.option_group(
     "Authentication Options",
@@ -159,12 +224,19 @@ def add_baseunit(base_unit_ips: tuple[str, ...], db_url: str|None, username: str
                     )
                     infos.append(info)
                 except (asyncio.TimeoutError, ClientError) as e:
-                    click_secho(
+                    warnings.warn(
                         f"Connection to BaseUnit at IP '{base_unit_ip}' failed: {e}, skipping",
-                        fg="red",
+                        CommunicationError,
                     )
         return infos
-    base_unit_infos = asyncio.run(get_all_baseunit_infos())
+    exit_code = 0
+    base_unit_infos, had_error = catch_communication_errors(
+        asyncio.run,
+        get_all_baseunit_infos(),
+    )
+    if had_error:
+        exit_code = COMMUNICATION_ERROR_EXIT_CODE
+
     with get_db_session() as session:
         for baseunit_info in base_unit_infos:
             base_unit = session.query(BaseUnit).filter_by(
@@ -203,6 +275,8 @@ def add_baseunit(base_unit_ips: tuple[str, ...], db_url: str|None, username: str
                     f"Created new BaseUnit '{base_unit.hostname}'",
                     fg="green",
                 )
+    if exit_code != 0:
+        raise SystemExit(exit_code)
 
 
 
@@ -272,9 +346,9 @@ def update_baseunit_info(db_url: str|None, username: str, password: str) -> None
                 fg="green",
             )
         except (asyncio.TimeoutError, ClientError) as e:
-            click_secho(
+            warnings.warn(
                 f"Connection to BaseUnit at IP '{base_unit.ip_address}' failed: {e}, skipping",
-                fg="red",
+                CommunicationError,
             )
         return changed
 
@@ -301,7 +375,7 @@ def update_baseunit_info(db_url: str|None, username: str, password: str) -> None
                 )
                 session.commit()
 
-    asyncio.run(update_all_baseunit_infos())
+    raise_communication_errors(asyncio.run, update_all_baseunit_infos())
 
 
 @cli.command(name="update-power-management")
@@ -345,9 +419,9 @@ def update_power_management_info(db_url: str|None, username: str, password: str)
             )
             return True
         except (asyncio.TimeoutError, ClientError) as e:
-            click_secho(
+            warnings.warn(
                 f"Connection to BaseUnit at IP '{base_unit.ip_address}' failed: {e}, skipping",
-                fg="red",
+                CommunicationError,
             )
             return False
 
@@ -374,7 +448,7 @@ def update_power_management_info(db_url: str|None, username: str, password: str)
                 )
                 session.commit()
 
-    asyncio.run(update_all_power_management_infos())
+    raise_communication_errors(asyncio.run, update_all_power_management_infos())
 
 
 
@@ -429,7 +503,7 @@ def update_statuses(db_url: str|None, username: str, password: str, usage_only: 
                 click_secho(f"Updated statuses for {num_updated} BaseUnits.", fg="green")
                 session.commit()
 
-    asyncio.run(update_all_statuses())
+    raise_communication_errors(asyncio.run, update_all_statuses())
 
 
 
@@ -458,9 +532,9 @@ async def update_baseunit_status[T: BaseUnitStatus|BaseUnitUsageStatus](
         session.add(status)
         return status
     except (asyncio.TimeoutError, ClientError) as e:
-        click_secho(
+        warnings.warn(
             f"Connection to BaseUnit at IP '{base_unit.ip_address}' failed: {e}, skipping",
-            fg="red",
+            CommunicationError,
         )
         return None
 
@@ -542,9 +616,9 @@ def fetch_readings_bulk(
                             fg="blue",
                         )
                     except (asyncio.TimeoutError, ClientError) as e:
-                        click_secho(
+                        warnings.warn(
                             f"Connection to BaseUnit '{base_unit.hostname}' failed: {e}, skipping",
-                            fg="red",
+                            CommunicationError,
                         )
 
                 fetch_coros = set()
@@ -557,7 +631,7 @@ def fetch_readings_bulk(
 
                 orm_session.commit()
 
-    asyncio.run(fetch_all())
+    raise_communication_errors(asyncio.run, fetch_all())
 
 
 
