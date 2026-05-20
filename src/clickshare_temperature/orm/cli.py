@@ -59,7 +59,7 @@ class CommunicationError(UserWarning):
     """
 
 
-COMMUNICATION_ERROR_EXIT_CODE = 2
+COMMUNICATION_ERROR_EXIT_CODE: int = 2
 """Exit code to use when a :class:`CommunicationError` is raised and causes the program to exit"""
 
 
@@ -78,7 +78,7 @@ def catch_communication_errors[**P, ResultT](
     Returns:
         A tuple of:
 
-        - **result**: The result of the function call, or None if a CommunicationError was caught
+        - **result**: The result of the function call
         - **had_error**: A boolean indicating whether a CommunicationError was caught
     """
     with warnings.catch_warnings(record=True) as w:
