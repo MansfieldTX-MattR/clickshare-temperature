@@ -459,4 +459,4 @@ if influxdb_cli is not None:
     cli.add_command(influxdb_cli)
 
 if __name__ == "__main__":
-    cli()   # pyright: ignore[reportCallIssue]
+    cli.main()
