@@ -19,6 +19,12 @@ from .baseunit_api import (
 )
 from .temperature_history import TemperatureHistory
 from .log_archive import LogArchive
+from .timezone import (
+    LOCAL_TZ_ENV_VAR,
+    NotFound,
+    get_local_timezone,
+    set_local_timezone,
+)
 from .types import AioHttpRequestOptions, AioHttpSessionOptions
 from .utils import (
     ClickColor,
@@ -87,6 +93,15 @@ global_option_group = click_extra.option_group(
         default=False,
         help="Whether to verify SSL certificates for aiohttp requests. Default is False.",
     ),
+    click_extra.option(
+        "--local-timezone",
+        envvar=LOCAL_TZ_ENV_VAR,
+        type=str,
+        required=False,
+        help="Name of the local timezone (e.g. 'America/New_York'). " \
+             "If not provided, the local timezone will be detected automatically " \
+             "using the tzdata database and the system's timezone settings.",
+    ),
 )
 
 output_option_group = click_extra.option_group(
@@ -140,8 +155,19 @@ def cli(
     password: str,
     aiohttp_timeout: int,
     aiohttp_ssl: bool,
+    local_timezone: str|None,
 ) -> None:
     """CLI for working with ClickShare BaseUnit temperature logs."""
+    if local_timezone is not None:
+        set_local_timezone(local_timezone)
+    else:
+        tz = get_local_timezone(raise_exc=False)
+        if tz is NotFound:
+            raise click.BadParameter(
+                "Local timezone could not be detected. " \
+                "Please set the local timezone using the --local-timezone option "
+                "or the CLICKSHARE_LOCAL_TIMEZONE environment variable."
+            )
     ctx.obj = CLIRootContext(
         auth_info=AuthInfo(
             username=username,
