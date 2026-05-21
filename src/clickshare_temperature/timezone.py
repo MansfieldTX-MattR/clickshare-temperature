@@ -2,7 +2,7 @@ from __future__ import annotations
 from typing import Literal
 import os
 import datetime
-from zoneinfo import ZoneInfo
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 import time
 import enum
 
@@ -30,7 +30,34 @@ class TimezoneLookupError(TimezoneError):
 
 
 def detect_local_timezone() -> datetime.tzinfo:
-    """Detect the local timezone using the tzdata database."""
+    """Detect the local timezone using the tzdata database
+
+    Returns:
+        The local timezone as a :class:`datetime.tzinfo`.
+
+    Raises:
+        TimezoneLookupError: If the local timezone could not be detected.
+    """
+    load_dotenv()
+    local_tz_name = os.getenv(LOCAL_TZ_ENV_VAR)
+    if local_tz_name is not None:
+        return timezone_from_name(local_tz_name)
+    tz_abbr = time.tzname[time.daylight]
+    return timezone_from_name(tz_abbr)
+
+
+def timezone_from_name(tz_name: str) -> datetime.tzinfo:
+    """Get a timezone object from a timezone name, with some handling for common abbreviations
+
+    Arguments:
+        tz_name: The name of the timezone (e.g. "America/New_York" or "EST")
+
+    Returns:
+        A timezone object corresponding to the given name.
+
+    Raises:
+        TimezoneLookupError: If the timezone could not be found by name or abbreviation.
+    """
     def expand_tz_abbr(tz_abbr: str) -> str|None:
         """Expand a timezone abbreviation to a full timezone name if possible."""
         tz_abbr = tz_abbr.upper()
@@ -45,24 +72,22 @@ def detect_local_timezone() -> datetime.tzinfo:
             "PDT": "US/Pacific",
         }
         return tz_map.get(tz_abbr)
-    load_dotenv()
-    local_tz_name = os.getenv(LOCAL_TZ_ENV_VAR)
-    if local_tz_name is not None:
-        try:
-            return ZoneInfo(local_tz_name)
-        except Exception as e:
-            raise TimezoneLookupError(
-                f"Failed to load local timezone from environment variable {LOCAL_TZ_ENV_VAR}='{local_tz_name}'"
-            ) from e
     try:
-        tz_abbr = time.tzname[time.daylight]
-        tz_name = expand_tz_abbr(tz_abbr)
-        if tz_name is not None:
-            return ZoneInfo(tz_name)
-        else:
-            raise TimezoneLookupError(f"Could not expand timezone abbreviation '{tz_abbr}' to a full timezone name.")
-    except Exception as e:
-        raise TimezoneLookupError(f"Failed to detect local timezone: {e}")
+        tz = ZoneInfo(tz_name)
+        return tz
+    except ZoneInfoNotFoundError as outer_exc:
+        tz_name_expanded = expand_tz_abbr(tz_name)
+        if tz_name_expanded is None:
+            raise TimezoneLookupError(
+                f"Timezone '{tz_name}' not found and could not be expanded from abbreviation."
+            ) from outer_exc
+        try:
+            tz = ZoneInfo(tz_name_expanded)
+            return tz
+        except ZoneInfoNotFoundError as inner_exc:
+            raise TimezoneLookupError(
+                f"Timezone '{tz_name}' not found, and expanded name '{tz_name_expanded}' also not found."
+            ) from inner_exc
 
 
 def get_local_timezone() -> datetime.tzinfo|NotFoundType:
