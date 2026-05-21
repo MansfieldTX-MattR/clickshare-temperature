@@ -11,13 +11,16 @@ from dotenv import load_dotenv
 UTC = datetime.timezone.utc
 LOCAL_TZ: datetime.tzinfo|NotFoundType|None = None
 LOCAL_TZ_ENV_VAR = "CLICKSHARE_LOCAL_TIMEZONE"
+"""Environment variable name for specifying the local timezone name"""
 
 
 class _Sentinel(enum.Enum):
     token = enum.auto()
 
 type NotFoundType = Literal[_Sentinel.token]
+"""Type for a sentinel value indicating that something was not found"""
 NotFound: NotFoundType = _Sentinel.token
+"""Sentinel value indicating that something was not found"""
 
 
 class TimezoneError(Exception):
@@ -142,21 +145,53 @@ def is_aware(dt: datetime.datetime) -> bool:
 
 
 def ensure_aware(dt: datetime.datetime) -> datetime.datetime:
-    """Ensure a datetime object is timezone-aware"""
+    """Ensure a datetime object is timezone-aware
+
+    Arguments:
+        dt: A datetime object.
+
+    Returns:
+        The same datetime object if it is timezone-aware.
+
+    Raises:
+        TimezoneError: If the input datetime is not timezone-aware.
+    """
     if not is_aware(dt):
         raise TimezoneError("Expected a timezone-aware datetime, but got a naive datetime.")
     return dt
 
 
 def make_aware(dt: datetime.datetime, tz: datetime.tzinfo) -> datetime.datetime:
-    """Make a naive datetime object timezone-aware by assigning the given timezone."""
+    """Make a naive datetime object timezone-aware by assigning the given timezone
+
+    Arguments:
+        dt: A naive datetime object
+        tz: The timezone to assign to the datetime object
+
+    Returns:
+        A timezone-aware datetime object.
+
+    Raises:
+        TimezoneError: If the input datetime is not naive
+    """
     if is_aware(dt):
         raise TimezoneError("Expected a naive datetime, but got a timezone-aware datetime.")
     return dt.replace(tzinfo=tz)
 
 
 def as_timezone(dt: datetime.datetime, tz: datetime.tzinfo) -> datetime.datetime:
-    """Convert a datetime object to the given timezone."""
+    """Convert a datetime object to the given timezone
+
+    Arguments:
+        dt: A timezone-aware datetime object.
+        tz: The timezone to convert the datetime to.
+
+    Returns:
+        A timezone-aware datetime object in the given timezone.
+
+    Raises:
+        TimezoneError: If the input datetime is not timezone-aware.
+    """
     if not is_aware(dt):
         raise TimezoneError("Expected a timezone-aware datetime, but got a naive datetime.")
     return dt.astimezone(tz)
@@ -203,7 +238,14 @@ def normalize(dt: datetime.datetime) -> datetime.datetime:
 
 
 def as_utc(dt: datetime.datetime) -> datetime.datetime:
-    """Convert a datetime to UTC."""
+    """Convert a datetime to UTC
+
+    Arguments:
+        dt: A timezone-aware datetime.
+
+    Raises:
+        TimezoneError: If the input datetime is not timezone-aware.
+    """
     if not is_aware(dt):
         raise TimezoneError("Expected a timezone-aware datetime, but got a naive datetime.")
     return as_timezone(dt, UTC)
