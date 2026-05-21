@@ -44,7 +44,7 @@ except ModuleNotFoundError as exc:
     else:
         raise
 
-influxdb_cli: None|click.Group
+influxdb_cli: None|click_extra.Group|Callable[..., None]
 try:
     from .influxdb import cli as influxdb_cli
 except ImportError:
@@ -459,4 +459,4 @@ if influxdb_cli is not None:
     cli.add_command(influxdb_cli)
 
 if __name__ == "__main__":
-    cli()
+    cli()   # pyright: ignore[reportCallIssue]
