@@ -229,9 +229,7 @@ def normalize(dt: datetime.datetime) -> datetime.datetime:
         TimezoneLookupError: If the local timezone could not be detected.
         TimezoneError: If the input datetime is not timezone-aware.
     """
-    local_tz = get_local_timezone()
-    if local_tz is NotFound:
-        raise TimezoneError("Local timezone could not be detected.")
+    local_tz = get_local_timezone(raise_exc=True)
     if not is_aware(dt):
         raise TimezoneError("Expected a timezone-aware datetime, but got a naive datetime.")
     return as_timezone(dt, local_tz)
