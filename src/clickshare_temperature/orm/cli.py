@@ -4,6 +4,7 @@ import asyncio
 import warnings
 from pathlib import Path
 import datetime
+from dataclasses import dataclass
 
 import click
 import click_extra
@@ -20,7 +21,6 @@ from ..types import (
     BaseUnitInfo,
     PowerModeStatus,
     AioHttpRequestOptions,
-    AioHttpSessionOptions
 )
 from ..baseunit_api import (
     create_session as create_aiohttp_session,
@@ -28,8 +28,6 @@ from ..baseunit_api import (
     get_baseunit_status,
     get_baseunit_identity,
     get_power_management_info,
-    DEFAULT_REQUEST_OPTIONS,
-    DEFAULT_SESSION_OPTIONS
 )
 
 from .engine import (
@@ -50,7 +48,7 @@ from .models import (
 from .serialization import serialize_database, deserialize_database
 from ..temperature_history import TemperatureHistory
 from ..utils import click_secho, get_baseunit_from_filename, is_valid_ip_or_hostname
-from ..click_extra_params import get_extra_params
+from ..click_extra_params import get_extra_params, CLIRootContext
 from .. import timezone
 
 
@@ -117,27 +115,6 @@ def raise_communication_errors[**P, ResultT](
     return result
 
 
-auth_option_group = click_extra.option_group(
-    "Authentication Options",
-    click_extra.option(
-        "--username", "-u",
-        envvar="CLICKSHARE_BASEUNIT_USERNAME",
-        type=str,
-        required=True,
-        prompt=True,
-        help="Username for BaseUnit API authentication.",
-    ),
-    click_extra.option(
-        "--password", "-p",
-        envvar="CLICKSHARE_BASEUNIT_PASSWORD",
-        type=str,
-        required=True,
-        prompt=True,
-        hide_input=True,
-        help="Password for BaseUnit API authentication.",
-    ),
-)
-
 db_option_group = click_extra.option_group(
     "Database Options",
     click_extra.option(
@@ -149,21 +126,41 @@ db_option_group = click_extra.option_group(
 )
 
 
+@dataclass
+class CLIDbContext(CLIRootContext):
+    """Context object for the ORM CLI
+
+    This extends :class:`CLIRootContext`
+    """
+    db_url: str|None
+    """Database URL for SQLAlchemy"""
+
+
+
 @click_extra.group(name="orm", params=get_extra_params())
-def cli() -> None:
+@db_option_group
+@click_extra.pass_context
+def cli(ctx: click.Context, db_url: str|None) -> None:
     """CLI for ClickShare ORM commands"""
-    pass
+    root_ctx: CLIRootContext = ctx.obj
+    ctx.obj = CLIDbContext(
+        auth_info=root_ctx.auth_info,
+        aiohttp_request_options=root_ctx.aiohttp_request_options,
+        aiohttp_session_options=root_ctx.aiohttp_session_options,
+        db_url=db_url,
+    )
+    if db_url is not None:
+        set_engine_uri(db_url)
+
 
 @cli.command(name="from-files")
 @click_extra.argument(
     "directory",
     type=click.Path(exists=True, file_okay=False, path_type=Path),
 )
-@db_option_group
-def backfill_from_files(directory: Path, db_url: str|None) -> None:
+@click_extra.pass_obj
+def backfill_from_files(ctx_obj: CLIDbContext, directory: Path) -> None:
     """Backfill sensor readings from all files in a directory to the database."""
-    if db_url is not None:
-        set_engine_uri(db_url)
     with get_db_session() as session:
         for filepath in directory.glob("*.txt"):
             click_secho(f"Processing file {filepath}...", fg="blue")
@@ -201,15 +198,11 @@ def backfill_from_files(directory: Path, db_url: str|None) -> None:
 
 @cli.command(name="add-baseunit")
 @click_extra.argument("base_unit_ips", nargs=-1)
-@db_option_group
-@auth_option_group
-def add_baseunit(base_unit_ips: tuple[str, ...], db_url: str|None, username: str, password: str) -> None:
+@click_extra.pass_obj
+def add_baseunit(ctx_obj: CLIDbContext, base_unit_ips: tuple[str, ...]) -> None:
     """Add a BaseUnit to the database without fetching sensor readings."""
-    if db_url is not None:
-        set_engine_uri(db_url)
-    auth_info = AuthInfo(username=username, password=password)
-    session_options: AioHttpSessionOptions = DEFAULT_SESSION_OPTIONS
-    request_options: AioHttpRequestOptions = DEFAULT_REQUEST_OPTIONS
+    session_options = ctx_obj.aiohttp_session_options
+    request_options = ctx_obj.aiohttp_request_options
 
     async def get_all_baseunit_infos() -> list[BaseUnitInfo]:
         infos: list[BaseUnitInfo] = []
@@ -218,7 +211,7 @@ def add_baseunit(base_unit_ips: tuple[str, ...], db_url: str|None, username: str
                 try:
                     info = await get_baseunit_info(
                         base_unit_ip,
-                        auth_info=auth_info,
+                        auth_info=ctx_obj.auth_info,
                         session=aiohttp_session,
                         **request_options,
                     )
@@ -281,11 +274,9 @@ def add_baseunit(base_unit_ips: tuple[str, ...], db_url: str|None, username: str
 
 
 @cli.command(name="list-baseunits")
-@db_option_group
-def list_baseunits(db_url: str|None) -> None:
+@click_extra.pass_obj
+def list_baseunits(ctx_obj: CLIDbContext) -> None:
     """List all BaseUnits in the database."""
-    if db_url is not None:
-        set_engine_uri(db_url)
     with get_db_session() as session:
         base_units = session.query(BaseUnit).all()
         if len(base_units) == 0:
@@ -297,14 +288,10 @@ def list_baseunits(db_url: str|None) -> None:
 
 
 @cli.command(name="update-baseunit-info")
-@db_option_group
-@auth_option_group
-def update_baseunit_info(db_url: str|None, username: str, password: str) -> None:
-    if db_url is not None:
-        set_engine_uri(db_url)
-    auth_info = AuthInfo(username=username, password=password)
-    session_options: AioHttpSessionOptions = DEFAULT_SESSION_OPTIONS
-    request_options: AioHttpRequestOptions = DEFAULT_REQUEST_OPTIONS
+@click_extra.pass_obj
+def update_baseunit_info(ctx_obj: CLIDbContext) -> None:
+    session_options = ctx_obj.aiohttp_session_options
+    request_options = ctx_obj.aiohttp_request_options
 
     async def update_baseunit_info(base_unit: BaseUnit, session: Session, aiohttp_session: ClientSession) -> bool:
         if not is_valid_ip_or_hostname(base_unit.ip_address):
@@ -316,7 +303,7 @@ def update_baseunit_info(db_url: str|None, username: str, password: str) -> None
         try:
             info = await get_baseunit_info(
                 base_unit.ip_address,
-                auth_info=auth_info,
+                auth_info=ctx_obj.auth_info,
                 session=aiohttp_session,
                 **request_options,
             )
@@ -329,7 +316,7 @@ def update_baseunit_info(db_url: str|None, username: str, password: str) -> None
                 changed = True
             identity_info = await get_baseunit_identity(
                 base_unit.ip_address,
-                auth_info=auth_info,
+                auth_info=ctx_obj.auth_info,
                 session=aiohttp_session,
                 **request_options,
             )
@@ -379,15 +366,11 @@ def update_baseunit_info(db_url: str|None, username: str, password: str) -> None
 
 
 @cli.command(name="update-power-management")
-@db_option_group
-@auth_option_group
-def update_power_management_info(db_url: str|None, username: str, password: str) -> None:
+@click_extra.pass_obj
+def update_power_management_info(ctx_obj: CLIDbContext) -> None:
     """Fetch the power management settings and statuses for all BaseUnits in the database and update the database."""
-    if db_url is not None:
-        set_engine_uri(db_url)
-    auth_info = AuthInfo(username=username, password=password)
-    session_options: AioHttpSessionOptions = DEFAULT_SESSION_OPTIONS
-    request_options: AioHttpRequestOptions = DEFAULT_REQUEST_OPTIONS
+    session_options = ctx_obj.aiohttp_session_options
+    request_options = ctx_obj.aiohttp_request_options
     now = timezone.utcnow()
 
 
@@ -401,7 +384,7 @@ def update_power_management_info(db_url: str|None, username: str, password: str)
         try:
             power_info = await get_power_management_info(
                 base_unit.ip_address,
-                auth_info=auth_info,
+                auth_info=ctx_obj.auth_info,
                 session=aiohttp_session,
                 **request_options,
             )
@@ -454,8 +437,6 @@ def update_power_management_info(db_url: str|None, username: str, password: str)
 
 
 @cli.command(name="update-statuses")
-@db_option_group
-@auth_option_group
 # @click.option(
 #     "--upload-influx",
 #     is_flag=True,
@@ -470,15 +451,13 @@ def update_power_management_info(db_url: str|None, username: str, password: str)
 #     "--backfill-readings",
 #     is_flag=True,
 # )
-def update_statuses(db_url: str|None, username: str, password: str, usage_only: bool) -> None:
+@click_extra.pass_obj
+def update_statuses(ctx_obj: CLIDbContext, usage_only: bool) -> None:
     """Fetch the status for all BaseUnits in the database and print it to the console."""
-    if db_url is not None:
-        set_engine_uri(db_url)
     # if upload_influx:
     #     from ..influxdb import upload_baseunit_status
-    auth_info = AuthInfo(username=username, password=password)
-    session_options: AioHttpSessionOptions = DEFAULT_SESSION_OPTIONS
-    request_options: AioHttpRequestOptions = DEFAULT_REQUEST_OPTIONS
+    session_options = ctx_obj.aiohttp_session_options
+    request_options = ctx_obj.aiohttp_request_options
 
     model_cls = BaseUnitUsageStatus if usage_only else BaseUnitStatus
 
@@ -495,7 +474,10 @@ def update_statuses(db_url: str|None, username: str, password: str, usage_only: 
                 #     for base_unit in base_units
                 # ]
                 update_coros = [
-                    update_baseunit_status(base_unit, auth_info, model_cls, session, aiohttp_session, request_options)
+                    update_baseunit_status(
+                        base_unit, ctx_obj.auth_info, model_cls, session,
+                        aiohttp_session, request_options
+                    )
                     for base_unit in base_units
                 ]
                 statuses = await asyncio.gather(*update_coros)
@@ -546,24 +528,20 @@ async def update_baseunit_status[T: BaseUnitStatus|BaseUnitUsageStatus](
     required=False,
     help="Path to a text file containing a list of BaseUnit IP addresses, one per line.",
 )
-@db_option_group
-@auth_option_group
 @click_extra.option(
     "--usage-only",
     is_flag=True,
     help="Whether to fetch only usage statuses instead of full statuses.",
 )
+@click_extra.pass_obj
 def fetch_readings_bulk(
+    ctx_obj: CLIDbContext,
     baseunit_ip_file: Path|None,
-    db_url: str|None,
-    username: str,
-    password: str,
     usage_only: bool,
 ) -> None:
     """Fetch sensor readings for multiple BaseUnits and add them to the database."""
-    auth_info = AuthInfo(username=username, password=password)
-    session_options: AioHttpSessionOptions = DEFAULT_SESSION_OPTIONS
-    request_options: AioHttpRequestOptions = DEFAULT_REQUEST_OPTIONS
+    session_options = ctx_obj.aiohttp_session_options
+    request_options = ctx_obj.aiohttp_request_options
     baseunit_ips: list[str]|None = None
     if baseunit_ip_file is not None:
         baseunit_ips = []
@@ -575,8 +553,6 @@ def fetch_readings_bulk(
                 if base_unit_ip:
                     baseunit_ips.append(base_unit_ip)
 
-    if db_url is not None:
-        set_engine_uri(db_url)
 
     model_cls = BaseUnitUsageStatus if usage_only else BaseUnitStatus
 
@@ -588,7 +564,7 @@ def fetch_readings_bulk(
                     base_unit_query = base_unit_query.filter(BaseUnit.ip_address.in_(baseunit_ips))
                 status_coros = [
                     update_baseunit_status(
-                        base_unit, auth_info, model_cls, orm_session,
+                        base_unit, ctx_obj.auth_info, model_cls, orm_session,
                         aiohttp_session, request_options,
                     )
                     for base_unit in base_unit_query.all()
@@ -606,7 +582,7 @@ def fetch_readings_bulk(
                         return None
                     try:
                         await base_unit.add_sensor_readings_from_api(
-                            auth_info=auth_info,
+                            auth_info=ctx_obj.auth_info,
                             session=orm_session,
                             aiohttp_session=aiohttp_session,
                             request_options=request_options,
@@ -636,11 +612,9 @@ def fetch_readings_bulk(
 
 
 @cli.command(name="backfill-influx")
-@db_option_group
-def backfill_influx(db_url: str|None) -> None:
+@click_extra.pass_obj
+def backfill_influx(ctx_obj: CLIDbContext) -> None:
     """Backfill all existing statuses in the database to InfluxDB."""
-    if db_url is not None:
-        set_engine_uri(db_url)
     from ..influxdb import upload_baseunit_status, backfill_readings, upload_power_management_statuses
 
     def backfill_base_unit(session: Session, base_unit: BaseUnit) -> None:
@@ -728,11 +702,9 @@ def show_db_schema() -> None:
 
 
 @cli.command()
-@db_option_group
-def init_database(db_url: str|None) -> None:
+@click_extra.pass_obj
+def init_database(ctx_obj: CLIDbContext) -> None:
     """Initialize the database by creating all tables."""
-    if db_url is not None:
-        set_engine_uri(db_url)
     init_db()
 
 
@@ -741,16 +713,14 @@ def init_database(db_url: str|None) -> None:
     'output_file',
     type=click.Path(dir_okay=False, path_type=Path),
 )
-@db_option_group
 @click_extra.option(
     "--pretty",
     is_flag=True,
     help="Whether to pretty-print the JSON output with indentation.",
 )
-def dump_database(output_file: Path, db_url: str|None, pretty: bool) -> None:
+@click_extra.pass_obj
+def dump_database(ctx_obj: CLIDbContext, output_file: Path, pretty: bool) -> None:
     """Dump the entire database to a JSON file."""
-    if db_url is not None:
-        set_engine_uri(db_url)
     with get_db_session() as session:
         serialize_database(session, filename=output_file, indent=2 if pretty else None)
 
@@ -761,25 +731,18 @@ def dump_database(output_file: Path, db_url: str|None, pretty: bool) -> None:
     'input_file',
     type=click.Path(exists=True, dir_okay=False, path_type=Path),
 )
-@db_option_group
 @click_extra.option(
     "--limit-to-models",
     type=str,
     multiple=True,
     help="Limit deserialization to specific models by name.",
 )
-def load_database(input_file: Path, db_url: str|None, limit_to_models: list[str]) -> None:
+@click_extra.pass_obj
+def load_database(ctx_obj: CLIDbContext, input_file: Path, limit_to_models: list[str]) -> None:
     """Load the entire database from a JSON file."""
-    if db_url is not None:
-        set_engine_uri(db_url)
     with get_db_session() as session:
         deserialize_database(
             session,
             input_file,
             limit_to_models=limit_to_models if len(limit_to_models) > 0 else None,
         )
-
-
-
-if __name__ == "__main__":
-    cli()

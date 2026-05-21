@@ -19,9 +19,20 @@ from .baseunit_api import (
 )
 from .temperature_history import TemperatureHistory
 from .log_archive import LogArchive
+from .timezone import (
+    LOCAL_TZ_ENV_VAR,
+    NotFound,
+    get_local_timezone,
+    set_local_timezone,
+)
 from .types import AioHttpRequestOptions, AioHttpSessionOptions
-from .utils import ClickColor, click_secho, get_output_file_for_baseunit
-from .click_extra_params import get_extra_params
+from .utils import (
+    ClickColor,
+    click_secho,
+    get_output_file_for_baseunit,
+    build_aiohttp_request_options,
+)
+from .click_extra_params import get_extra_params, CLIRootContext
 
 
 orm_cli: None|click_extra.Group|Callable[..., None]
@@ -33,7 +44,7 @@ except ModuleNotFoundError as exc:
     else:
         raise
 
-influxdb_cli: None|click.Group
+influxdb_cli: None|click_extra.Group|Callable[..., None]
 try:
     from .influxdb import cli as influxdb_cli
 except ImportError:
@@ -49,8 +60,8 @@ type AppendFromFormat = Literal["str", "json"]
 
 
 
-auth_option_group = click_extra.option_group(
-    "Authentication Options",
+global_option_group = click_extra.option_group(
+    "Global Options",
     click_extra.option(
         "--username", "-u",
         envvar="CLICKSHARE_BASEUNIT_USERNAME",
@@ -67,6 +78,29 @@ auth_option_group = click_extra.option_group(
         prompt=True,
         hide_input=True,
         help="Password for BaseUnit API authentication.",
+    ),
+    click_extra.option(
+        "--aiohttp-timeout",
+        envvar="CLICKSHARE_AIOHTTP_TIMEOUT",
+        type=int,
+        default=10,
+        help="Timeout in seconds for aiohttp requests. Default is 10 seconds.",
+    ),
+    click_extra.option(
+        "--aiohttp-ssl",
+        envvar="CLICKSHARE_AIOHTTP_SSL",
+        type=bool,
+        default=False,
+        help="Whether to verify SSL certificates for aiohttp requests. Default is False.",
+    ),
+    click_extra.option(
+        "--local-timezone",
+        envvar=LOCAL_TZ_ENV_VAR,
+        type=str,
+        required=False,
+        help="Name of the local timezone (e.g. 'America/New_York'). " \
+             "If not provided, the local timezone will be detected automatically " \
+             "using the tzdata database and the system's timezone settings.",
     ),
 )
 
@@ -104,10 +138,48 @@ input_option_group = click_extra.option_group(
 
 
 
-@click_extra.group(params=get_extra_params())
-def cli() -> None:
+@click_extra.group(
+    params=get_extra_params(),
+    context_settings={
+        "show_default": True,
+        "show_choices": True,
+        "show_envvar": True,
+        "align_option_groups": True,
+    }
+)
+@global_option_group
+@click_extra.pass_context
+def cli(
+    ctx: click.Context,
+    username: str,
+    password: str,
+    aiohttp_timeout: int,
+    aiohttp_ssl: bool,
+    local_timezone: str|None,
+) -> None:
     """CLI for working with ClickShare BaseUnit temperature logs."""
-    pass
+    if local_timezone is not None:
+        set_local_timezone(local_timezone)
+    else:
+        tz = get_local_timezone(raise_exc=False)
+        if tz is NotFound:
+            raise click.BadParameter(
+                "Local timezone could not be detected. " \
+                "Please set the local timezone using the --local-timezone option "
+                "or the CLICKSHARE_LOCAL_TIMEZONE environment variable."
+            )
+    ctx.obj = CLIRootContext(
+        auth_info=AuthInfo(
+            username=username,
+            password=password,
+        ),
+        aiohttp_request_options=build_aiohttp_request_options(
+            timeout_seconds=aiohttp_timeout,
+            ssl=aiohttp_ssl,
+        ),
+        aiohttp_session_options=DEFAULT_SESSION_OPTIONS,
+    )
+
 
 @cli.command(name="parse")
 @click_extra.argument(
@@ -140,7 +212,6 @@ def parse(input_file: Path, output_format: OutputFormat, output_file: Path|None)
     "baseunit_ip",
     type=str,
 )
-@auth_option_group
 @input_option_group
 @output_option_group
 @click_extra.option(
@@ -155,10 +226,10 @@ def parse(input_file: Path, output_format: OutputFormat, output_file: Path|None)
     "parsing the logs and extracting temperature readings. The output format options will be ignored. " \
     "If this flag is set, the output file option is required.",
 )
+@click_extra.pass_obj
 def cli_download(
+    ctx_obj: CLIRootContext,
     baseunit_ip: str,
-    username: str,
-    password: str,
     append_from: Path|None,
     append_from_format: AppendFromFormat,
     output_format: OutputFormat,
@@ -171,13 +242,14 @@ def cli_download(
         raise ValueError("Cannot use --upload-influx flag when --raw-logs flag is set, because raw logs cannot be parsed for temperature readings.")
     obj, appended = asyncio.run(download(
         baseunit_ip=baseunit_ip,
-        username=username,
-        password=password,
+        auth_info=ctx_obj.auth_info,
         append_from=append_from,
         append_from_format=append_from_format,
         output_format=output_format,
         output_file=output_file,
         raw_logs=raw_logs,
+        session_options=ctx_obj.aiohttp_session_options,
+        request_options=ctx_obj.aiohttp_request_options,
     ))
     if upload_influx:
         from .influxdb import backfill_readings
@@ -185,8 +257,9 @@ def cli_download(
         assert isinstance(obj, TemperatureHistory)
         base_unit = asyncio.run(get_baseunit_info(
             baseunit_ip,
-            auth_info=AuthInfo(username=username, password=password),
-            **DEFAULT_REQUEST_OPTIONS,
+            auth_info=ctx_obj.auth_info,
+            session_options=ctx_obj.aiohttp_session_options,
+            **ctx_obj.aiohttp_request_options,
         ))
         num_points = backfill_readings(base_unit, obj)
         if num_points > 0:
@@ -204,7 +277,6 @@ def cli_download(
     type=click.Path(exists=True, dir_okay=False, path_type=Path),
     # help="Path to a text file containing a list of BaseUnit IP addresses, one per line.",
 )
-@auth_option_group
 @input_option_group
 @output_option_group
 @click_extra.option(
@@ -219,10 +291,10 @@ def cli_download(
     "parsing the logs and extracting temperature readings. The output format options will be ignored. " \
     "If this flag is set, the output file option is required.",
 )
+@click_extra.pass_obj
 def cli_download_multiple(
+    ctx_obj: CLIRootContext,
     baseunit_ip_file: Path,
-    username: str,
-    password: str,
     append_from: Path,
     append_from_format: AppendFromFormat,
     output_format: OutputFormat,
@@ -244,9 +316,9 @@ def cli_download_multiple(
         click_secho(f"Processing BaseUnit {baseunit_ip}...", fg="white")
         base_unit = await get_baseunit_info(
             baseunit_ip,
-            auth_info=AuthInfo(username=username, password=password),
+            auth_info=ctx_obj.auth_info,
             session=session,
-            **DEFAULT_REQUEST_OPTIONS,
+            **ctx_obj.aiohttp_request_options,
         )
 
         append_from_file = get_output_file_for_baseunit(
@@ -258,14 +330,15 @@ def cli_download_multiple(
 
         obj, file_written = await download(
             baseunit_ip=baseunit_ip,
-            username=username,
-            password=password,
+            auth_info=ctx_obj.auth_info,
             append_from=append_from_file,
             append_from_format=append_from_format,
             output_format=output_format,
             output_file=final_output_file,
             raw_logs=raw_logs,
             suppress_click_echo=True,
+            session_options=ctx_obj.aiohttp_session_options,
+            request_options=ctx_obj.aiohttp_request_options,
         )
         msg = f"Finished processing BaseUnit {baseunit_ip} (base unit: {base_unit})."
         color: ClickColor|None = None
@@ -289,7 +362,7 @@ def cli_download_multiple(
 
 
     async def run_downloads() -> None:
-        async with create_session(**DEFAULT_SESSION_OPTIONS) as session:
+        async with create_session(**ctx_obj.aiohttp_session_options) as session:
             tasks = [run_download(baseunit_ip, session) for baseunit_ip in baseunit_ips]
             await asyncio.gather(*tasks)
 
@@ -298,8 +371,7 @@ def cli_download_multiple(
 
 async def download(
     baseunit_ip: str,
-    username: str,
-    password: str,
+    auth_info: AuthInfo,
     append_from: Path|None,
     append_from_format: AppendFromFormat,
     output_format: OutputFormat,
@@ -309,13 +381,12 @@ async def download(
     raw_logs: bool = False,
     suppress_click_echo: bool = False,
 ) -> tuple[TemperatureHistory|LogArchive, bool]:
-    auth = AuthInfo(username=username, password=password)
     if raw_logs:
         if output_file is None:
             raise ValueError("Output file must be specified when --raw-logs flag is set.")
         archive = await LogArchive.from_baseunit(
             baseunit_ip,
-            auth_info=auth,
+            auth_info=auth_info,
             session_options=session_options or DEFAULT_SESSION_OPTIONS,
             **(request_options or DEFAULT_REQUEST_OPTIONS)
         )
@@ -348,7 +419,7 @@ async def download(
         return archive, True
     history = await TemperatureHistory.from_baseunit(
         baseunit_ip,
-        auth_info=auth,
+        auth_info=auth_info,
         session_options=session_options or DEFAULT_SESSION_OPTIONS,
         **(request_options or DEFAULT_REQUEST_OPTIONS)
     )
@@ -381,11 +452,11 @@ async def download(
     return history, True
 
 if orm_cli is not None:
-    # Type ignore is needed here because the click_extra.group decorator's
-    # signature is not correctly recognized by type checkers.
-    cli.add_command(orm_cli)  # type: ignore[arg-type]
+    assert isinstance(orm_cli, click.Command)
+    cli.add_command(orm_cli)
 if influxdb_cli is not None:
+    assert isinstance(influxdb_cli, click.Command)
     cli.add_command(influxdb_cli)
 
 if __name__ == "__main__":
-    cli()
+    cli.main()
