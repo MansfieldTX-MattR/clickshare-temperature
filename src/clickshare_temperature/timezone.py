@@ -101,6 +101,24 @@ def get_local_timezone() -> datetime.tzinfo|NotFoundType:
     return LOCAL_TZ
 
 
+def set_local_timezone(tz_or_name: datetime.tzinfo|str) -> None:
+    """Set the local timezone from a timezone object or a timezone name
+
+    Arguments:
+        tz_or_name: A timezone object or a timezone name (e.g. "America/New_York" or "EST")
+
+    Raises:
+        TimezoneLookupError: If a timezone name is provided but the timezone
+            cannot be found.
+    """
+    global LOCAL_TZ
+    if isinstance(tz_or_name, str):
+        tz = timezone_from_name(tz_or_name)
+    else:
+        tz = tz_or_name
+    LOCAL_TZ = tz
+
+
 def is_aware(dt: datetime.datetime) -> bool:
     """Check if a datetime object is timezone-aware."""
     return dt.tzinfo is not None and dt.tzinfo.utcoffset(dt) is not None
