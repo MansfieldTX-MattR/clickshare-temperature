@@ -293,9 +293,7 @@ async def get_baseunit_status(
         data: BaseUnitStatusResponse = await response.json()
         first_used = datetime.datetime.fromisoformat(data["firstUsed"])
         if not timezone.is_aware(first_used):
-            tz = timezone.get_local_timezone()
-            if tz is timezone.NotFound:
-                raise ValueError("Could not determine local timezone to make firstUsed timestamp aware")
+            tz = timezone.get_local_timezone(raise_exc=True)
             first_used = timezone.make_aware(first_used, tz)
         return BaseUnitStatus(
             base_unit=await get_baseunit_info(
