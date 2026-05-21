@@ -243,6 +243,9 @@ def as_utc(dt: datetime.datetime) -> datetime.datetime:
     Arguments:
         dt: A timezone-aware datetime.
 
+    Returns:
+        A timezone-aware datetime in UTC.
+
     Raises:
         TimezoneError: If the input datetime is not timezone-aware.
     """
