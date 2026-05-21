@@ -20,7 +20,12 @@ from .baseunit_api import (
 from .temperature_history import TemperatureHistory
 from .log_archive import LogArchive
 from .types import AioHttpRequestOptions, AioHttpSessionOptions
-from .utils import ClickColor, click_secho, get_output_file_for_baseunit
+from .utils import (
+    ClickColor,
+    click_secho,
+    get_output_file_for_baseunit,
+    build_aiohttp_request_options,
+)
 from .click_extra_params import get_extra_params, CLIRootContext
 
 
@@ -67,6 +72,20 @@ global_option_group = click_extra.option_group(
         prompt=True,
         hide_input=True,
         help="Password for BaseUnit API authentication.",
+    ),
+    click_extra.option(
+        "--aiohttp-timeout",
+        envvar="CLICKSHARE_AIOHTTP_TIMEOUT",
+        type=int,
+        default=10,
+        help="Timeout in seconds for aiohttp requests. Default is 10 seconds.",
+    ),
+    click_extra.option(
+        "--aiohttp-ssl",
+        envvar="CLICKSHARE_AIOHTTP_SSL",
+        type=bool,
+        default=False,
+        help="Whether to verify SSL certificates for aiohttp requests. Default is False.",
     ),
 )
 
@@ -119,6 +138,8 @@ def cli(
     ctx: click.Context,
     username: str,
     password: str,
+    aiohttp_timeout: int,
+    aiohttp_ssl: bool,
 ) -> None:
     """CLI for working with ClickShare BaseUnit temperature logs."""
     ctx.obj = CLIRootContext(
@@ -126,6 +147,11 @@ def cli(
             username=username,
             password=password,
         ),
+        aiohttp_request_options=build_aiohttp_request_options(
+            timeout_seconds=aiohttp_timeout,
+            ssl=aiohttp_ssl,
+        ),
+        aiohttp_session_options=DEFAULT_SESSION_OPTIONS,
     )
 
 
@@ -196,6 +222,8 @@ def cli_download(
         output_format=output_format,
         output_file=output_file,
         raw_logs=raw_logs,
+        session_options=ctx_obj.aiohttp_session_options,
+        request_options=ctx_obj.aiohttp_request_options,
     ))
     if upload_influx:
         from .influxdb import backfill_readings
@@ -204,7 +232,8 @@ def cli_download(
         base_unit = asyncio.run(get_baseunit_info(
             baseunit_ip,
             auth_info=ctx_obj.auth_info,
-            **DEFAULT_REQUEST_OPTIONS,
+            session_options=ctx_obj.aiohttp_session_options,
+            **ctx_obj.aiohttp_request_options,
         ))
         num_points = backfill_readings(base_unit, obj)
         if num_points > 0:
@@ -263,7 +292,7 @@ def cli_download_multiple(
             baseunit_ip,
             auth_info=ctx_obj.auth_info,
             session=session,
-            **DEFAULT_REQUEST_OPTIONS,
+            **ctx_obj.aiohttp_request_options,
         )
 
         append_from_file = get_output_file_for_baseunit(
@@ -282,6 +311,8 @@ def cli_download_multiple(
             output_file=final_output_file,
             raw_logs=raw_logs,
             suppress_click_echo=True,
+            session_options=ctx_obj.aiohttp_session_options,
+            request_options=ctx_obj.aiohttp_request_options,
         )
         msg = f"Finished processing BaseUnit {baseunit_ip} (base unit: {base_unit})."
         color: ClickColor|None = None
@@ -305,7 +336,7 @@ def cli_download_multiple(
 
 
     async def run_downloads() -> None:
-        async with create_session(**DEFAULT_SESSION_OPTIONS) as session:
+        async with create_session(**ctx_obj.aiohttp_session_options) as session:
             tasks = [run_download(baseunit_ip, session) for baseunit_ip in baseunit_ips]
             await asyncio.gather(*tasks)
 

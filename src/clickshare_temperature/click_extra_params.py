@@ -11,7 +11,11 @@ from click_extra import (
     ExtraVersionOption,
 )
 
-from clickshare_temperature.types import AuthInfo
+from clickshare_temperature.types import (
+    AuthInfo,
+    AioHttpRequestOptions,
+    AioHttpSessionOptions,
+)
 
 
 def get_extra_params() -> list[click.Option]:
@@ -30,3 +34,7 @@ class CLIRootContext:
     """
     auth_info: AuthInfo
     """Authentication information for the ClickShare device"""
+    aiohttp_request_options: AioHttpRequestOptions
+    """Options for aiohttp requests"""
+    aiohttp_session_options: AioHttpSessionOptions
+    """Options for aiohttp sessions"""

@@ -1,11 +1,14 @@
 from __future__ import annotations
-from typing import Literal, Any, TYPE_CHECKING
+from typing import Literal, Unpack, Any, TYPE_CHECKING
 from pathlib import Path
 
 import click
 from yarl import URL
+from aiohttp import ClientTimeout
+from aiohttp.helpers import _SENTINEL, sentinel
 
-from .types import BaseUnitInfo
+from .types import BaseUnitInfo, AioHttpRequestOptions
+from .baseunit_api import DEFAULT_REQUEST_OPTIONS
 if TYPE_CHECKING:
     from .cli import OutputFormat
 
@@ -103,3 +106,28 @@ def is_valid_ip_or_hostname(value: str) -> bool:
         return True
     except ValueError:
         return False
+
+
+def build_aiohttp_request_options(
+    timeout_seconds: int|float|None|_SENTINEL = sentinel,
+    **kwargs: Unpack[AioHttpRequestOptions]
+) -> AioHttpRequestOptions:
+    """Build a dictionary of options for aiohttp requests
+
+    This includes setting the timeout option based on the provided timeout_seconds
+    (without requiring the caller to import aiohttp.ClientTimeout).
+    """
+    timeout: ClientTimeout|_SENTINEL|None
+    if timeout_seconds is not sentinel:
+        timeout = ClientTimeout(total=timeout_seconds)
+    elif "timeout" in kwargs:
+        timeout = kwargs["timeout"]
+        del kwargs["timeout"]
+    else:
+        timeout = DEFAULT_REQUEST_OPTIONS.get("timeout", sentinel)
+    options: AioHttpRequestOptions = {
+        **DEFAULT_REQUEST_OPTIONS,
+        "timeout": timeout,
+        **kwargs,
+    }
+    return options

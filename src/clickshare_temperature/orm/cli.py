@@ -21,7 +21,6 @@ from ..types import (
     BaseUnitInfo,
     PowerModeStatus,
     AioHttpRequestOptions,
-    AioHttpSessionOptions
 )
 from ..baseunit_api import (
     create_session as create_aiohttp_session,
@@ -29,8 +28,6 @@ from ..baseunit_api import (
     get_baseunit_status,
     get_baseunit_identity,
     get_power_management_info,
-    DEFAULT_REQUEST_OPTIONS,
-    DEFAULT_SESSION_OPTIONS
 )
 
 from .engine import (
@@ -169,6 +166,8 @@ def cli(ctx: click.Context, db_url: str|None) -> None:
     root_ctx: CLIRootContext = ctx.obj
     ctx.obj = CLIDbContext(
         auth_info=root_ctx.auth_info,
+        aiohttp_request_options=root_ctx.aiohttp_request_options,
+        aiohttp_session_options=root_ctx.aiohttp_session_options,
         db_url=db_url,
     )
     if db_url is not None:
@@ -223,8 +222,8 @@ def backfill_from_files(ctx_obj: CLIDbContext, directory: Path) -> None:
 @click_extra.pass_obj
 def add_baseunit(ctx_obj: CLIDbContext, base_unit_ips: tuple[str, ...]) -> None:
     """Add a BaseUnit to the database without fetching sensor readings."""
-    session_options: AioHttpSessionOptions = DEFAULT_SESSION_OPTIONS
-    request_options: AioHttpRequestOptions = DEFAULT_REQUEST_OPTIONS
+    session_options = ctx_obj.aiohttp_session_options
+    request_options = ctx_obj.aiohttp_request_options
 
     async def get_all_baseunit_infos() -> list[BaseUnitInfo]:
         infos: list[BaseUnitInfo] = []
@@ -312,8 +311,8 @@ def list_baseunits(ctx_obj: CLIDbContext) -> None:
 @cli.command(name="update-baseunit-info")
 @click_extra.pass_obj
 def update_baseunit_info(ctx_obj: CLIDbContext) -> None:
-    session_options: AioHttpSessionOptions = DEFAULT_SESSION_OPTIONS
-    request_options: AioHttpRequestOptions = DEFAULT_REQUEST_OPTIONS
+    session_options = ctx_obj.aiohttp_session_options
+    request_options = ctx_obj.aiohttp_request_options
 
     async def update_baseunit_info(base_unit: BaseUnit, session: Session, aiohttp_session: ClientSession) -> bool:
         if not is_valid_ip_or_hostname(base_unit.ip_address):
@@ -391,8 +390,8 @@ def update_baseunit_info(ctx_obj: CLIDbContext) -> None:
 @click_extra.pass_obj
 def update_power_management_info(ctx_obj: CLIDbContext) -> None:
     """Fetch the power management settings and statuses for all BaseUnits in the database and update the database."""
-    session_options: AioHttpSessionOptions = DEFAULT_SESSION_OPTIONS
-    request_options: AioHttpRequestOptions = DEFAULT_REQUEST_OPTIONS
+    session_options = ctx_obj.aiohttp_session_options
+    request_options = ctx_obj.aiohttp_request_options
     now = timezone.utcnow()
 
 
@@ -480,8 +479,8 @@ def update_statuses(ctx_obj: CLIDbContext, usage_only: bool) -> None:
         set_engine_uri(db_url)
     # if upload_influx:
     #     from ..influxdb import upload_baseunit_status
-    session_options: AioHttpSessionOptions = DEFAULT_SESSION_OPTIONS
-    request_options: AioHttpRequestOptions = DEFAULT_REQUEST_OPTIONS
+    session_options = ctx_obj.aiohttp_session_options
+    request_options = ctx_obj.aiohttp_request_options
 
     model_cls = BaseUnitUsageStatus if usage_only else BaseUnitStatus
 
@@ -564,8 +563,8 @@ def fetch_readings_bulk(
     usage_only: bool,
 ) -> None:
     """Fetch sensor readings for multiple BaseUnits and add them to the database."""
-    session_options: AioHttpSessionOptions = DEFAULT_SESSION_OPTIONS
-    request_options: AioHttpRequestOptions = DEFAULT_REQUEST_OPTIONS
+    session_options = ctx_obj.aiohttp_session_options
+    request_options = ctx_obj.aiohttp_request_options
     baseunit_ips: list[str]|None = None
     if baseunit_ip_file is not None:
         baseunit_ips = []
