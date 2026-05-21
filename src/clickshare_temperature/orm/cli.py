@@ -475,8 +475,6 @@ def update_power_management_info(ctx_obj: CLIDbContext) -> None:
 @click_extra.pass_obj
 def update_statuses(ctx_obj: CLIDbContext, usage_only: bool) -> None:
     """Fetch the status for all BaseUnits in the database and print it to the console."""
-    if db_url is not None:
-        set_engine_uri(db_url)
     # if upload_influx:
     #     from ..influxdb import upload_baseunit_status
     session_options = ctx_obj.aiohttp_session_options
