@@ -767,8 +767,3 @@ def load_database(ctx_obj: CLIDbContext, input_file: Path, limit_to_models: list
             input_file,
             limit_to_models=limit_to_models if len(limit_to_models) > 0 else None,
         )
-
-
-
-if __name__ == "__main__":
-    cli()   # pyright: ignore[reportCallIssue]
