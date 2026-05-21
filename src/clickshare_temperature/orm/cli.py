@@ -115,27 +115,6 @@ def raise_communication_errors[**P, ResultT](
     return result
 
 
-auth_option_group = click_extra.option_group(
-    "Authentication Options",
-    click_extra.option(
-        "--username", "-u",
-        envvar="CLICKSHARE_BASEUNIT_USERNAME",
-        type=str,
-        required=True,
-        prompt=True,
-        help="Username for BaseUnit API authentication.",
-    ),
-    click_extra.option(
-        "--password", "-p",
-        envvar="CLICKSHARE_BASEUNIT_PASSWORD",
-        type=str,
-        required=True,
-        prompt=True,
-        hide_input=True,
-        help="Password for BaseUnit API authentication.",
-    ),
-)
-
 db_option_group = click_extra.option_group(
     "Database Options",
     click_extra.option(
