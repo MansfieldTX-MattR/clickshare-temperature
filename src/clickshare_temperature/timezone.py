@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Literal
+from typing import Literal, overload
 import os
 import datetime
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -90,14 +90,31 @@ def timezone_from_name(tz_name: str) -> datetime.tzinfo:
             ) from inner_exc
 
 
-def get_local_timezone() -> datetime.tzinfo|NotFoundType:
-    """Get the local timezone, detecting it if necessary."""
+@overload
+def get_local_timezone(raise_exc: Literal[False] = ...) -> datetime.tzinfo|NotFoundType: ...
+@overload
+def get_local_timezone(raise_exc: Literal[True] = ...) -> datetime.tzinfo: ...
+def get_local_timezone(raise_exc: bool = False) -> datetime.tzinfo|NotFoundType:
+    """Get the local timezone, detecting it if necessary
+
+    Arguments:
+        raise_exc: If True, raise an exception if the local timezone cannot be detected.
+
+    Returns:
+        The local timezone as a :class:`datetime.tzinfo`, or :obj:`NotFound` if
+            the timezone could not be detected (and *raise_exc* is False).
+
+    Raises:
+        TimezoneLookupError: If the local timezone could not be detected and *raise_exc* is True.
+    """
     global LOCAL_TZ
     if LOCAL_TZ is None:
         try:
             LOCAL_TZ = detect_local_timezone()
         except TimezoneLookupError:
             LOCAL_TZ = NotFound
+    if raise_exc and LOCAL_TZ is NotFound:
+        raise TimezoneLookupError("Local timezone could not be detected.")
     return LOCAL_TZ
 
 
@@ -146,17 +163,37 @@ def as_timezone(dt: datetime.datetime, tz: datetime.tzinfo) -> datetime.datetime
 
 
 def localize(dt: datetime.datetime) -> datetime.datetime:
-    """Convert a UTC datetime to the local timezone."""
-    local_tz = get_local_timezone()
-    if local_tz is NotFound:
-        raise TimezoneError("Local timezone could not be detected.")
+    """Convert a UTC datetime to the local timezone
+
+    Arguments:
+        dt: A timezone-aware datetime in UTC.
+
+    Returns:
+        A timezone-aware datetime in the local timezone.
+
+    Raises:
+        TimezoneLookupError: If the local timezone could not be detected.
+        TimezoneError: If the input datetime is not timezone-aware.
+    """
+    local_tz = get_local_timezone(raise_exc=True)
     if not is_aware(dt):
         dt = make_aware(dt, UTC)
     return as_timezone(dt, local_tz)
 
 
 def normalize(dt: datetime.datetime) -> datetime.datetime:
-    """Normalize a datetime to the local timezone, converting it if necessary."""
+    """Normalize a datetime to the local timezone, converting it if necessary
+
+    Arguments:
+        dt: A timezone-aware datetime.
+
+    Returns:
+        A timezone-aware datetime in the local timezone.
+
+    Raises:
+        TimezoneLookupError: If the local timezone could not be detected.
+        TimezoneError: If the input datetime is not timezone-aware.
+    """
     local_tz = get_local_timezone()
     if local_tz is NotFound:
         raise TimezoneError("Local timezone could not be detected.")
