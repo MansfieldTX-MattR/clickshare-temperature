@@ -452,10 +452,10 @@ async def download(
     return history, True
 
 if orm_cli is not None:
-    # Type ignore is needed here because the click_extra.group decorator's
-    # signature is not correctly recognized by type checkers.
-    cli.add_command(orm_cli)  # type: ignore[arg-type]
+    assert isinstance(orm_cli, click.Command)
+    cli.add_command(orm_cli)
 if influxdb_cli is not None:
+    assert isinstance(influxdb_cli, click.Command)
     cli.add_command(influxdb_cli)
 
 if __name__ == "__main__":
