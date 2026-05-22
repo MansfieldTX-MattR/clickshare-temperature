@@ -301,7 +301,7 @@ class BaseUnit(Base[BaseUnitNaturalKey, _BaseUnitSerializeTD]):
                 online=online,
             )
             session.add(online_status)
-            session.commit()
+            session.flush()
 
     async def add_sensor_readings_from_api(
         self,
