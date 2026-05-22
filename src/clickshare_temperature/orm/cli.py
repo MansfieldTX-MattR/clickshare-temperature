@@ -264,8 +264,9 @@ def add_baseunit(ctx_obj: CLIDbContext, base_unit_ips: tuple[str, ...]) -> None:
                     ip_address=baseunit_info.ip_address,
                 )
                 session.add(base_unit)
-                session.commit()
+                session.flush()
                 base_unit.set_online_status(True)
+                session.commit()
                 click_secho(
                     f"Created new BaseUnit '{base_unit.hostname}'",
                     fg="green",
