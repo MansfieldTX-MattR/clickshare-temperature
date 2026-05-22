@@ -39,6 +39,7 @@ from .engine import (
 from .models import (
     BaseUnit,
     BaseUnitIdentity,
+    BaseUnitOnlineStatus,
     PowerManagementSettings,
     PowerManagementStatus,
     BaseUnitStatus,
@@ -263,6 +264,8 @@ def add_baseunit(ctx_obj: CLIDbContext, base_unit_ips: tuple[str, ...]) -> None:
                     ip_address=baseunit_info.ip_address,
                 )
                 session.add(base_unit)
+                session.flush()
+                base_unit.set_online_status(True)
                 session.commit()
                 click_secho(
                     f"Created new BaseUnit '{base_unit.hostname}'",
@@ -307,6 +310,7 @@ def update_baseunit_info(ctx_obj: CLIDbContext) -> None:
                 session=aiohttp_session,
                 **request_options,
             )
+            base_unit.set_online_status(True)
             changed = False
             if base_unit.room_name != info.room_name:
                 base_unit.room_name = info.room_name
@@ -337,6 +341,7 @@ def update_baseunit_info(ctx_obj: CLIDbContext) -> None:
                 f"Connection to BaseUnit at IP '{base_unit.ip_address}' failed: {e}, skipping",
                 CommunicationError,
             )
+            base_unit.set_online_status(False)
         return changed
 
     async def update_all_baseunit_infos() -> None:
@@ -388,6 +393,7 @@ def update_power_management_info(ctx_obj: CLIDbContext) -> None:
                 session=aiohttp_session,
                 **request_options,
             )
+            base_unit.set_online_status(True)
             settings_model = base_unit.power_management_settings
             if settings_model is None:
                 settings_model = PowerManagementSettings.from_data(base_unit, power_info, session)
@@ -406,6 +412,7 @@ def update_power_management_info(ctx_obj: CLIDbContext) -> None:
                 f"Connection to BaseUnit at IP '{base_unit.ip_address}' failed: {e}, skipping",
                 CommunicationError,
             )
+            base_unit.set_online_status(False)
             return False
 
     async def update_all_power_management_infos() -> None:
@@ -510,6 +517,7 @@ async def update_baseunit_status[T: BaseUnitStatus|BaseUnitUsageStatus](
             session=aiohttp_session,
             **request_options
         )
+        base_unit.set_online_status(True)
         status = model_cls.from_data(base_unit, status_data)
         session.add(status)
         return status
@@ -518,6 +526,7 @@ async def update_baseunit_status[T: BaseUnitStatus|BaseUnitUsageStatus](
             f"Connection to BaseUnit at IP '{base_unit.ip_address}' failed: {e}, skipping",
             CommunicationError,
         )
+        base_unit.set_online_status(False)
         return None
 
 
@@ -615,7 +624,12 @@ def fetch_readings_bulk(
 @click_extra.pass_obj
 def backfill_influx(ctx_obj: CLIDbContext) -> None:
     """Backfill all existing statuses in the database to InfluxDB."""
-    from ..influxdb import upload_baseunit_status, backfill_readings, upload_power_management_statuses
+    from ..influxdb import (
+        upload_baseunit_status,
+        backfill_readings,
+        upload_power_management_statuses,
+        upload_baseunit_online_statuses,
+    )
 
     def backfill_base_unit(session: Session, base_unit: BaseUnit) -> None:
         sensor_query = session.query(SensorReading).filter_by(
@@ -640,6 +654,26 @@ def backfill_influx(ctx_obj: CLIDbContext) -> None:
         for reading in sensor_query.all():
             reading.uploaded_to_influx = True
         session.commit()
+
+    def backfill_online_statuses(session: Session) -> None:
+        online_status_query = session.query(BaseUnitOnlineStatus).filter_by(uploaded_to_influx=False)
+        if online_status_query.count() == 0:
+            return
+        click_secho(
+            f"Backfilling {online_status_query.count()} BaseUnitOnlineStatus entries...",
+            fg="blue",
+        )
+        upload_baseunit_online_statuses([
+            (s.base_unit.to_data(), s.online, s.timestamp)
+            for s in online_status_query.all()
+        ])
+        for online_status in online_status_query.all():
+            online_status.uploaded_to_influx = True
+        session.commit()
+        click_secho(
+            "Backfill complete for BaseUnitOnlineStatus",
+            fg="green",
+        )
 
     def backfill_statuses[T: BaseUnitStatus | BaseUnitUsageStatus](session: Session, model_cls: type[T]) -> None:
         statuses = session.query(model_cls).filter_by(uploaded_to_influx=False)
@@ -683,6 +717,7 @@ def backfill_influx(ctx_obj: CLIDbContext) -> None:
         for base_unit in session.query(BaseUnit).all():
             backfill_base_unit(session, base_unit)
 
+        backfill_online_statuses(session)
         backfill_statuses(session, BaseUnitUsageStatus)
         backfill_statuses(session, BaseUnitStatus)
         backfill_power_statuses(session)

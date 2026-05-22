@@ -202,6 +202,22 @@ def backfill_readings(
         return len(points)
 
 
+def baseunit_online_status_to_point(
+    base_unit: BaseUnitInfo,
+    online: bool,
+    timestamp: datetime.datetime
+) -> Point:
+    """Convert a :class:`.BaseUnitInfo` and online status to an InfluxDB `Point` for uploading to InfluxDB
+    """
+    assert timestamp.tzinfo is not None, "Timestamp must be timezone-aware"
+    p = Point("baseunit_online_status") \
+        .tag("device_id", base_unit.hostname) \
+        .tag("room_name", base_unit.room_name) \
+        .field("online", online) \
+        .time(timestamp, WritePrecision.NS)
+    return p
+
+
 def baseunit_status_to_point(
     status: BaseUnitStatus|BaseUnitUsageStatus,
     timestamp: datetime.datetime
@@ -241,6 +257,23 @@ def power_management_status_to_point(
         .field("power_mode", mode) \
         .time(timestamp, WritePrecision.NS)
     return p
+
+
+def upload_baseunit_online_statuses(
+    statuses: Iterable[tuple[BaseUnitInfo, bool, datetime.datetime]]
+) -> None:
+    """Upload one or more :class:`.BaseUnitInfo` and online status tuples to InfluxDB
+
+    Arguments:
+        statuses: An iterable of tuples containing a :class:`.BaseUnitInfo`, a boolean
+            indicating online status, and a timestamp for when the status was recorded
+    """
+    with InfluxDBClient3(host=INFLUX_URL, token=INFLUX_TOKEN, org=INFLUX_ORG) as client:
+        points = [
+            baseunit_online_status_to_point(base_unit, online, timestamp)
+            for base_unit, online, timestamp in statuses
+        ]
+        client.write(database=INFLUX_BUCKET, record=points)
 
 
 def upload_baseunit_status(

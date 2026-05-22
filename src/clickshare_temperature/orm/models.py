@@ -42,6 +42,7 @@ DtIsoStr = NewType("DtIsoStr", str)
 
 
 type BaseUnitNaturalKey = str
+type BaseUnitOnlineStatusNaturalKey = tuple[BaseUnitNaturalKey, int]
 type BaseUnitIdentityNaturalKey = BaseUnitNaturalKey
 type PowerManagementStatusNaturalKey = tuple[BaseUnitNaturalKey, int]
 type PowerManagementSettingsNaturalKey = BaseUnitNaturalKey
@@ -57,6 +58,11 @@ class _BaseUnitSerializeTD(_BaseModelSerializeTD[BaseUnitNaturalKey]):
     hostname: str
     room_name: str
 
+class _BaseUnitOnlineStatusSerializeTD(_BaseModelSerializeTD[BaseUnitOnlineStatusNaturalKey]):
+    base_unit: RelationshipNaturalKey[BaseUnitNaturalKey]
+    timestamp: DtIsoStr
+    online: bool
+    uploaded_to_influx: bool
 
 class _BaseUnitIdentitySerializeTD(_BaseModelSerializeTD[BaseUnitIdentityNaturalKey]):
     base_unit: RelationshipNaturalKey[BaseUnitNaturalKey]
@@ -136,6 +142,13 @@ class BaseUnit(Base[BaseUnitNaturalKey, _BaseUnitSerializeTD]):
         back_populates="base_unit",
     )
     """The :class:`PowerManagementSettings` associated with this BaseUnit"""
+
+    online_statuses: Mapped[list[BaseUnitOnlineStatus]] = relationship(
+        "BaseUnitOnlineStatus",
+        back_populates="base_unit",
+        cascade="all, delete-orphan",
+    )
+    """The list of :class:`BaseUnitOnlineStatus` entries associated with this BaseUnit"""
 
     power_management_statuses: Mapped[list[PowerManagementStatus]] = relationship(
         "PowerManagementStatus",
@@ -242,6 +255,53 @@ class BaseUnit(Base[BaseUnitNaturalKey, _BaseUnitSerializeTD]):
             hostname=self.hostname,
             room_name=self.room_name,
         )
+
+    def last_online_status(self) -> bool|None:
+        """Get the most recent online status for this BaseUnit, or None if no statuses exist
+        """
+        last_status = self.last_online_status_instance()
+        if last_status is None:
+            return None
+        return last_status.online
+
+    def last_online_status_instance(self) -> BaseUnitOnlineStatus|None:
+        """Get the most recent :class:`BaseUnitOnlineStatus` for this BaseUnit, or None if no statuses exist
+        """
+        session = self._get_current_orm_session()
+        return session.query(BaseUnitOnlineStatus).filter_by(
+            base_unit_id=self.id
+        ).order_by(BaseUnitOnlineStatus.timestamp.desc()).first()
+
+    def set_online_status(
+        self,
+        online: bool,
+        timestamp: datetime.datetime|None = None
+    ) -> None:
+        """Set the online status for this BaseUnit, creating a new
+        :class:`BaseUnitOnlineStatus` entry in the database
+
+        Arguments:
+            online (bool): Whether the BaseUnit is online or offline
+            timestamp (datetime.datetime|None): The timestamp for the new status entry.
+                If None, the current time is used.
+        """
+        session = self._get_current_orm_session()
+        with session.begin_nested():
+            last_status = self.last_online_status()
+            if last_status is not None and last_status == online:
+                # No need to create a new status entry if the online status hasn't changed
+                return
+            if timestamp is None:
+                timestamp = timezone.utcnow()
+            else:
+                timezone.ensure_aware(timestamp)
+            online_status = BaseUnitOnlineStatus(
+                base_unit_id=self.id,
+                timestamp=timestamp,
+                online=online,
+            )
+            session.add(online_status)
+            session.flush()
 
     async def add_sensor_readings_from_api(
         self,
@@ -374,6 +434,82 @@ class BaseUnit(Base[BaseUnitNaturalKey, _BaseUnitSerializeTD]):
         return f"BaseUnit '{self.room_name}' ({self.hostname}) - {self.ip_address}"
 
 
+
+class BaseUnitOnlineStatus(Base[BaseUnitOnlineStatusNaturalKey, _BaseUnitOnlineStatusSerializeTD]):
+    """ORM model for the online status of a ClickShare BaseUnit at a given point in time
+    """
+    __tablename__ = "base_unit_online_statuses"
+    __table_args__ = (
+        UniqueConstraint("base_unit_id", "timestamp", name="uix_base_unit_online_status_base_unit_timestamp"),
+    )
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    timestamp: Mapped[datetime.datetime] = mapped_column(index=True, nullable=False)
+    """Timestamp of the online status entry"""
+    online: Mapped[bool] = mapped_column(nullable=False)
+    """Whether the BaseUnit is online (True) or offline (False)"""
+    uploaded_to_influx: Mapped[bool] = mapped_column(nullable=False, default=False)
+    """Whether this status entry has been uploaded to InfluxDB"""
+    base_unit_id: Mapped[int] = mapped_column(ForeignKey("base_units.id"), nullable=False)
+
+    base_unit: Mapped[BaseUnit] = relationship("BaseUnit", back_populates="online_statuses")
+
+    @property
+    def natural_key(self) -> BaseUnitOnlineStatusNaturalKey:
+        """Get the natural key for this instance
+        """
+        return (
+            self.base_unit.natural_key,
+            self.id,
+        )
+
+    @classmethod
+    def get_by_natural_key(cls, session: Session, key: BaseUnitOnlineStatusNaturalKey) -> Self|None:
+        """Get the instance of this model from the given natural key
+
+        If no instance exists, ``None`` is returned.
+        """
+        base_unit_hostname, pk = key
+        base_unit = BaseUnit.get_by_natural_key(session, base_unit_hostname)
+        if base_unit is None:
+            return None
+        return session.query(cls).filter_by(
+            base_unit_id=base_unit.id, id=pk
+        ).one_or_none()
+
+    def serialize(self) -> _BaseUnitOnlineStatusSerializeTD:
+        """Serialize this instance to a dictionary for JSON serialization
+        """
+        return _BaseUnitOnlineStatusSerializeTD(
+            natural_key=self.natural_key,
+            base_unit=RelationshipNaturalKey(
+                related_model_table="base_units",
+                related_model_key=self.base_unit.natural_key,
+            ),
+            timestamp=DtIsoStr(self.timestamp.isoformat()),
+            online=self.online,
+            uploaded_to_influx=self.uploaded_to_influx,
+        )
+
+    @classmethod
+    def deserialize(cls, data: _BaseUnitOnlineStatusSerializeTD, session: Session) -> Self|None:
+        """Deserialize a dictionary into an instance of this model
+        """
+        assert isinstance(data["base_unit"], RelationshipNaturalKey), f"Expected 'base_unit' to be a RelationshipNaturalKey, got {data['base_unit']}"
+        base_unit = BaseUnit.get_by_natural_key(session, data["base_unit"].related_model_key)
+        if base_unit is None:
+            return None
+        return cls(
+            base_unit_id=base_unit.id,
+            timestamp=timezone.ensure_aware(datetime.datetime.fromisoformat(data["timestamp"])),
+            online=data["online"],
+            uploaded_to_influx=data["uploaded_to_influx"],
+        )
+
+    def __repr__(self) -> str:
+        return f"<BaseUnitOnlineStatus(id={self.id}, base_unit={self.base_unit}, timestamp={self.timestamp}, online={self.online})>"
+
+    def __str__(self) -> str:
+        return f"BaseUnitOnlineStatus for {self.base_unit} at {self.timestamp}: {'Online' if self.online else 'Offline'}"
 
 
 class BaseUnitIdentity(Base[BaseUnitIdentityNaturalKey, _BaseUnitIdentitySerializeTD]):
@@ -1043,6 +1179,7 @@ class SensorReading(Base[SensorReadingNaturalKey, _SensorReadingSerializeTD]):
 
 type ModelInstance = Union[
     BaseUnit,
+    BaseUnitOnlineStatus,
     BaseUnitStatus,
     BaseUnitUsageStatus,
     SensorReading,
@@ -1053,6 +1190,7 @@ type ModelInstance = Union[
 type ModelClass = type[ModelInstance]
 type ModelTableName = Literal[
     "base_units",
+    "base_unit_online_statuses",
     "base_unit_statuses",
     "base_unit_usage_statuses",
     "sensor_readings",
@@ -1062,6 +1200,7 @@ type ModelTableName = Literal[
 ]
 MODEL_CLASSES = (
     BaseUnit,
+    BaseUnitOnlineStatus,
     BaseUnitIdentity,
     PowerManagementSettings,
     PowerManagementStatus,
