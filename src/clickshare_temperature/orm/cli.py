@@ -596,6 +596,7 @@ def fetch_readings_bulk(
                             aiohttp_session=aiohttp_session,
                             request_options=request_options,
                         )
+                        base_unit.set_online_status(True)
                         click_secho(
                             f"Finished processing BaseUnit '{base_unit.hostname}' (ID: {base_unit.id})",
                             fg="blue",
@@ -605,6 +606,7 @@ def fetch_readings_bulk(
                             f"Connection to BaseUnit '{base_unit.hostname}' failed: {e}, skipping",
                             CommunicationError,
                         )
+                        base_unit.set_online_status(False)
 
                 fetch_coros = set()
                 for base_unit in base_unit_query.all():
