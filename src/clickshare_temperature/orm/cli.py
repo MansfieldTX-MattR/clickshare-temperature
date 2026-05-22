@@ -303,6 +303,7 @@ def update_baseunit_info(ctx_obj: CLIDbContext) -> None:
                 fg="red",
             )
             return False
+        changed = False
         try:
             info = await get_baseunit_info(
                 base_unit.ip_address,
@@ -311,7 +312,6 @@ def update_baseunit_info(ctx_obj: CLIDbContext) -> None:
                 **request_options,
             )
             base_unit.set_online_status(True)
-            changed = False
             if base_unit.room_name != info.room_name:
                 base_unit.room_name = info.room_name
                 changed = True
