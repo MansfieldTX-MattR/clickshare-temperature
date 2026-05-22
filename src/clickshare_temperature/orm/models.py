@@ -62,6 +62,7 @@ class _BaseUnitOnlineStatusSerializeTD(_BaseModelSerializeTD[BaseUnitOnlineStatu
     base_unit: RelationshipNaturalKey[BaseUnitNaturalKey]
     timestamp: DtIsoStr
     online: bool
+    uploaded_to_influx: bool
 
 class _BaseUnitIdentitySerializeTD(_BaseModelSerializeTD[BaseUnitIdentityNaturalKey]):
     base_unit: RelationshipNaturalKey[BaseUnitNaturalKey]
@@ -486,6 +487,7 @@ class BaseUnitOnlineStatus(Base[BaseUnitOnlineStatusNaturalKey, _BaseUnitOnlineS
             ),
             timestamp=DtIsoStr(self.timestamp.isoformat()),
             online=self.online,
+            uploaded_to_influx=self.uploaded_to_influx,
         )
 
     @classmethod
@@ -500,6 +502,7 @@ class BaseUnitOnlineStatus(Base[BaseUnitOnlineStatusNaturalKey, _BaseUnitOnlineS
             base_unit_id=base_unit.id,
             timestamp=timezone.ensure_aware(datetime.datetime.fromisoformat(data["timestamp"])),
             online=data["online"],
+            uploaded_to_influx=data["uploaded_to_influx"],
         )
 
     def __repr__(self) -> str:
