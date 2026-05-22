@@ -255,6 +255,53 @@ class BaseUnit(Base[BaseUnitNaturalKey, _BaseUnitSerializeTD]):
             room_name=self.room_name,
         )
 
+    def last_online_status(self) -> bool|None:
+        """Get the most recent online status for this BaseUnit, or None if no statuses exist
+        """
+        last_status = self.last_online_status_instance()
+        if last_status is None:
+            return None
+        return last_status.online
+
+    def last_online_status_instance(self) -> BaseUnitOnlineStatus|None:
+        """Get the most recent :class:`BaseUnitOnlineStatus` for this BaseUnit, or None if no statuses exist
+        """
+        session = self._get_current_orm_session()
+        return session.query(BaseUnitOnlineStatus).filter_by(
+            base_unit_id=self.id
+        ).order_by(BaseUnitOnlineStatus.timestamp.desc()).first()
+
+    def set_online_status(
+        self,
+        online: bool,
+        timestamp: datetime.datetime|None = None
+    ) -> None:
+        """Set the online status for this BaseUnit, creating a new
+        :class:`BaseUnitOnlineStatus` entry in the database
+
+        Arguments:
+            online (bool): Whether the BaseUnit is online or offline
+            timestamp (datetime.datetime|None): The timestamp for the new status entry.
+                If None, the current time is used.
+        """
+        session = self._get_current_orm_session()
+        with session.begin_nested():
+            last_status = self.last_online_status()
+            if last_status is not None and last_status == online:
+                # No need to create a new status entry if the online status hasn't changed
+                return
+            if timestamp is None:
+                timestamp = timezone.utcnow()
+            else:
+                timezone.ensure_aware(timestamp)
+            online_status = BaseUnitOnlineStatus(
+                base_unit_id=self.id,
+                timestamp=timestamp,
+                online=online,
+            )
+            session.add(online_status)
+            session.commit()
+
     async def add_sensor_readings_from_api(
         self,
         auth_info: AuthInfo,

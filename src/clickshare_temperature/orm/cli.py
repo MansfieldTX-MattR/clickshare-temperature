@@ -264,6 +264,7 @@ def add_baseunit(ctx_obj: CLIDbContext, base_unit_ips: tuple[str, ...]) -> None:
                 )
                 session.add(base_unit)
                 session.commit()
+                base_unit.set_online_status(True)
                 click_secho(
                     f"Created new BaseUnit '{base_unit.hostname}'",
                     fg="green",
@@ -307,6 +308,7 @@ def update_baseunit_info(ctx_obj: CLIDbContext) -> None:
                 session=aiohttp_session,
                 **request_options,
             )
+            base_unit.set_online_status(True)
             changed = False
             if base_unit.room_name != info.room_name:
                 base_unit.room_name = info.room_name
@@ -337,6 +339,7 @@ def update_baseunit_info(ctx_obj: CLIDbContext) -> None:
                 f"Connection to BaseUnit at IP '{base_unit.ip_address}' failed: {e}, skipping",
                 CommunicationError,
             )
+            base_unit.set_online_status(False)
         return changed
 
     async def update_all_baseunit_infos() -> None:
@@ -388,6 +391,7 @@ def update_power_management_info(ctx_obj: CLIDbContext) -> None:
                 session=aiohttp_session,
                 **request_options,
             )
+            base_unit.set_online_status(True)
             settings_model = base_unit.power_management_settings
             if settings_model is None:
                 settings_model = PowerManagementSettings.from_data(base_unit, power_info, session)
@@ -406,6 +410,7 @@ def update_power_management_info(ctx_obj: CLIDbContext) -> None:
                 f"Connection to BaseUnit at IP '{base_unit.ip_address}' failed: {e}, skipping",
                 CommunicationError,
             )
+            base_unit.set_online_status(False)
             return False
 
     async def update_all_power_management_infos() -> None:
@@ -510,6 +515,7 @@ async def update_baseunit_status[T: BaseUnitStatus|BaseUnitUsageStatus](
             session=aiohttp_session,
             **request_options
         )
+        base_unit.set_online_status(True)
         status = model_cls.from_data(base_unit, status_data)
         session.add(status)
         return status
@@ -518,6 +524,7 @@ async def update_baseunit_status[T: BaseUnitStatus|BaseUnitUsageStatus](
             f"Connection to BaseUnit at IP '{base_unit.ip_address}' failed: {e}, skipping",
             CommunicationError,
         )
+        base_unit.set_online_status(False)
         return None
 
 
