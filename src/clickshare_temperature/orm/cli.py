@@ -39,6 +39,7 @@ from .engine import (
 from .models import (
     BaseUnit,
     BaseUnitIdentity,
+    BaseUnitOnlineStatus,
     PowerManagementSettings,
     PowerManagementStatus,
     BaseUnitStatus,
@@ -622,7 +623,12 @@ def fetch_readings_bulk(
 @click_extra.pass_obj
 def backfill_influx(ctx_obj: CLIDbContext) -> None:
     """Backfill all existing statuses in the database to InfluxDB."""
-    from ..influxdb import upload_baseunit_status, backfill_readings, upload_power_management_statuses
+    from ..influxdb import (
+        upload_baseunit_status,
+        backfill_readings,
+        upload_power_management_statuses,
+        upload_baseunit_online_statuses,
+    )
 
     def backfill_base_unit(session: Session, base_unit: BaseUnit) -> None:
         sensor_query = session.query(SensorReading).filter_by(
@@ -647,6 +653,26 @@ def backfill_influx(ctx_obj: CLIDbContext) -> None:
         for reading in sensor_query.all():
             reading.uploaded_to_influx = True
         session.commit()
+
+    def backfill_online_statuses(session: Session) -> None:
+        online_status_query = session.query(BaseUnitOnlineStatus).filter_by(uploaded_to_influx=False)
+        if online_status_query.count() == 0:
+            return
+        click_secho(
+            f"Backfilling {online_status_query.count()} BaseUnitOnlineStatus entries...",
+            fg="blue",
+        )
+        upload_baseunit_online_statuses([
+            (s.base_unit.to_data(), s.online, s.timestamp)
+            for s in online_status_query.all()
+        ])
+        for online_status in online_status_query.all():
+            online_status.uploaded_to_influx = True
+        session.commit()
+        click_secho(
+            "Backfill complete for BaseUnitOnlineStatus",
+            fg="green",
+        )
 
     def backfill_statuses[T: BaseUnitStatus | BaseUnitUsageStatus](session: Session, model_cls: type[T]) -> None:
         statuses = session.query(model_cls).filter_by(uploaded_to_influx=False)
@@ -690,6 +716,7 @@ def backfill_influx(ctx_obj: CLIDbContext) -> None:
         for base_unit in session.query(BaseUnit).all():
             backfill_base_unit(session, base_unit)
 
+        backfill_online_statuses(session)
         backfill_statuses(session, BaseUnitUsageStatus)
         backfill_statuses(session, BaseUnitStatus)
         backfill_power_statuses(session)

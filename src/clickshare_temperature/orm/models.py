@@ -446,6 +446,8 @@ class BaseUnitOnlineStatus(Base[BaseUnitOnlineStatusNaturalKey, _BaseUnitOnlineS
     """Timestamp of the online status entry"""
     online: Mapped[bool] = mapped_column(nullable=False)
     """Whether the BaseUnit is online (True) or offline (False)"""
+    uploaded_to_influx: Mapped[bool] = mapped_column(nullable=False, default=False)
+    """Whether this status entry has been uploaded to InfluxDB"""
     base_unit_id: Mapped[int] = mapped_column(ForeignKey("base_units.id"), nullable=False)
 
     base_unit: Mapped[BaseUnit] = relationship("BaseUnit", back_populates="online_statuses")
