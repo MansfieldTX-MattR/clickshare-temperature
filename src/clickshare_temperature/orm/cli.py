@@ -10,7 +10,7 @@ import click
 import click_extra
 # from yarl import URL
 from aiohttp import ClientSession, ClientError
-from sqlalchemy import create_engine as sa_create_engine
+from sqlalchemy import create_engine as sa_create_engine, or_
 from sqlalchemy.orm import Session
 
 if TYPE_CHECKING:
@@ -658,7 +658,26 @@ def backfill_influx(ctx_obj: CLIDbContext) -> None:
         session.commit()
 
     def backfill_online_statuses(session: Session) -> None:
-        online_status_query = session.query(BaseUnitOnlineStatus).filter_by(uploaded_to_influx=False)
+        time_series_window = datetime.timedelta(hours=1)
+        now = timezone.utcnow()
+
+        # Get the IDs of the last online status for each BaseUnit
+        last_online_status_ids: set[int] = set()
+        for base_unit in session.query(BaseUnit).all():
+            last_status = base_unit.last_online_status_instance()
+            if last_status is not None and last_status.id is not None:
+                last_online_status_ids.add(last_status.id)
+        online_status_query = session.query(BaseUnitOnlineStatus).filter(
+            BaseUnitOnlineStatus.id.in_(last_online_status_ids)
+        )
+
+        # Filter to only include statuses that haven't been uploaded to InfluxDB,
+        # or were last uploaded outside the time series window
+        online_status_query = online_status_query.filter(or_(
+            BaseUnitOnlineStatus.uploaded_to_influx.is_(False),
+            BaseUnitOnlineStatus.last_upload_to_influx.is_(None),
+            BaseUnitOnlineStatus.last_upload_to_influx < now - time_series_window,
+        ))
         if online_status_query.count() == 0:
             return
         click_secho(
@@ -671,6 +690,7 @@ def backfill_influx(ctx_obj: CLIDbContext) -> None:
         ])
         for online_status in online_status_query.all():
             online_status.uploaded_to_influx = True
+            online_status.last_upload_to_influx = now
         session.commit()
         click_secho(
             "Backfill complete for BaseUnitOnlineStatus",
