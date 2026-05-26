@@ -708,17 +708,34 @@ def backfill_influx(ctx_obj: CLIDbContext) -> None:
 
     def backfill_online_statuses(session: Session) -> None:
         now = timezone.utcnow()
-        online_status_query = get_online_statuses_for_influx_backfill(session, now=now)
+        time_series_window = datetime.timedelta(hours=1)
+        online_status_query = get_online_statuses_for_influx_backfill(
+            session,
+            time_series_window=time_series_window,
+            now=now,
+        )
         if online_status_query.count() == 0:
             return
         click_secho(
             f"Backfilling {online_status_query.count()} BaseUnitOnlineStatus entries...",
             fg="blue",
         )
-        upload_baseunit_online_statuses([
-            (s.base_unit.to_data(), s.online, s.timestamp)
-            for s in online_status_query.all()
-        ])
+        status_args: list[tuple[BaseUnitInfo, bool, datetime.datetime]] = []
+        for online_status in online_status_query.all():
+            base_unit_info = online_status.base_unit.to_data()
+            # If this is a "re-upload" of a stale last status, use the current
+            # time as the uploaded timestamp.
+            # Otherwise, use the original timestamp of the status to preserve the
+            # historical online/offline changes as accurately as possible.
+            if (
+                online_status.last_upload_to_influx is not None and
+                online_status.last_upload_to_influx < now - time_series_window
+            ):
+                upload_timestamp = now
+            else:
+                upload_timestamp = online_status.timestamp
+            status_args.append((base_unit_info, online_status.online, upload_timestamp))
+        upload_baseunit_online_statuses(status_args)
         for online_status in online_status_query.all():
             online_status.uploaded_to_influx = True
             online_status.last_upload_to_influx = now
