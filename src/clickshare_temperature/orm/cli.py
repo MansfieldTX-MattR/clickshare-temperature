@@ -727,8 +727,8 @@ def backfill_influx(ctx_obj: CLIDbContext) -> None:
             # time as the uploaded timestamp.
             # Otherwise, use the original timestamp of the status to preserve the
             # historical online/offline changes as accurately as possible.
-            if (
-                online_status.last_upload_to_influx is not None and
+            if online_status.uploaded_to_influx and (
+                online_status.last_upload_to_influx is None or
                 online_status.last_upload_to_influx < now - time_series_window
             ):
                 upload_timestamp = now
