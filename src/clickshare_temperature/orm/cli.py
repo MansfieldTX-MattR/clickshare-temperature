@@ -10,8 +10,8 @@ import click
 import click_extra
 # from yarl import URL
 from aiohttp import ClientSession, ClientError
-from sqlalchemy import create_engine as sa_create_engine, or_
-from sqlalchemy.orm import Session
+from sqlalchemy import create_engine as sa_create_engine, and_, or_
+from sqlalchemy.orm import Query, Session
 
 if TYPE_CHECKING:
     from sqlalchemy.engine import Engine
@@ -530,6 +530,55 @@ async def update_baseunit_status[T: BaseUnitStatus|BaseUnitUsageStatus](
         return None
 
 
+def get_online_statuses_for_influx_backfill(
+    session: Session,
+    time_series_window: datetime.timedelta = datetime.timedelta(hours=1),
+    now: datetime.datetime|None = None,
+) -> Query[BaseUnitOnlineStatus]:
+    """Build a query selecting BaseUnitOnlineStatus rows requiring Influx backfill
+
+    Selection includes either:
+
+    1. Any status that has not been uploaded yet.
+    2. The latest status per BaseUnit when its last upload is missing or stale.
+
+    Arguments:
+        session: The database session to use for the query
+        time_series_window: A :class:`datetime.timedelta` representing the maximum
+            allowed age of the last upload for a status to be considered "fresh".
+        now: The current time to use when determining if the last upload is stale.
+            If None, the current UTC time will be used.
+
+    Returns:
+        A SQLAlchemy Query object selecting the BaseUnitOnlineStatus rows that
+        require Influx backfill
+
+    """
+    if now is None:
+        now = timezone.utcnow()
+
+    last_online_status_ids: set[int] = set()
+    for base_unit in session.query(BaseUnit).all():
+        last_status = base_unit.last_online_status_instance()
+        if last_status is not None and last_status.id is not None:
+            last_online_status_ids.add(last_status.id)
+
+    latest_stale_or_missing = and_(
+        BaseUnitOnlineStatus.id.in_(last_online_status_ids),
+        or_(
+            BaseUnitOnlineStatus.last_upload_to_influx.is_(None),
+            BaseUnitOnlineStatus.last_upload_to_influx < now - time_series_window,
+        ),
+    )
+
+    return session.query(BaseUnitOnlineStatus).filter(
+        or_(
+            BaseUnitOnlineStatus.uploaded_to_influx.is_(False),
+            latest_stale_or_missing,
+        )
+    )
+
+
 @cli.command()
 @click_extra.option(
     "--baseunit-ip-file",
@@ -658,26 +707,8 @@ def backfill_influx(ctx_obj: CLIDbContext) -> None:
         session.commit()
 
     def backfill_online_statuses(session: Session) -> None:
-        time_series_window = datetime.timedelta(hours=1)
         now = timezone.utcnow()
-
-        # Get the IDs of the last online status for each BaseUnit
-        last_online_status_ids: set[int] = set()
-        for base_unit in session.query(BaseUnit).all():
-            last_status = base_unit.last_online_status_instance()
-            if last_status is not None and last_status.id is not None:
-                last_online_status_ids.add(last_status.id)
-        online_status_query = session.query(BaseUnitOnlineStatus).filter(
-            BaseUnitOnlineStatus.id.in_(last_online_status_ids)
-        )
-
-        # Filter to only include statuses that haven't been uploaded to InfluxDB,
-        # or were last uploaded outside the time series window
-        online_status_query = online_status_query.filter(or_(
-            BaseUnitOnlineStatus.uploaded_to_influx.is_(False),
-            BaseUnitOnlineStatus.last_upload_to_influx.is_(None),
-            BaseUnitOnlineStatus.last_upload_to_influx < now - time_series_window,
-        ))
+        online_status_query = get_online_statuses_for_influx_backfill(session, now=now)
         if online_status_query.count() == 0:
             return
         click_secho(
