@@ -1,5 +1,5 @@
 import pytest
-from typing import NamedTuple
+from typing import Callable, NamedTuple
 import datetime
 from pathlib import Path
 
@@ -14,6 +14,7 @@ from clickshare_temperature.orm import (
     get_session,
     BaseUnit as BaseUnitModel,
     BaseUnitIdentity as BaseUnitIdentityModel,
+    BaseUnitOnlineStatus as BaseUnitOnlineStatusModel,
     PowerManagementSettings as PowerManagementSettingsModel,
     PowerManagementStatus as PowerManagementStatusModel,
     BaseUnitStatus as BaseUnitStatusModel,
@@ -25,6 +26,7 @@ from clickshare_temperature.orm.serialization import (
     serialize_database,
     deserialize_database,
 )
+from clickshare_temperature.orm.cli import get_online_statuses_for_influx_backfill
 from clickshare_temperature.temperature_history import TemperatureHistory, SensorReading
 from clickshare_temperature.types import (
     BaseUnitIdentity,
@@ -79,6 +81,29 @@ def sample_base_unit_model(
     db_session.add(base_unit)
     db_session.commit()
     return base_unit
+
+
+@pytest.fixture
+def base_unit_factory(db_session: Session) -> Callable[[str], BaseUnitModel]:
+    """Create and persist uniquely named BaseUnit models for query tests
+
+    The suffix parameter is used to generate distinct hostnames and room names
+    so tests can create multiple BaseUnits without violating unique constraints.
+
+    """
+    def _factory(suffix: str) -> BaseUnitModel:
+        """Build one persisted BaseUnit using the provided suffix"""
+        base_unit = BaseUnitModel(
+            hostname=f"test-baseunit-{suffix}",
+            room_name=f"Test Room {suffix}",
+            ip_address=f"192.168.1.{(abs(hash(suffix)) % 200) + 10}",
+        )
+        db_session.add(base_unit)
+        db_session.commit()
+        return base_unit
+
+    return _factory
+
 
 @pytest.fixture
 def sample_base_unit_status_model(
@@ -489,6 +514,81 @@ def test_sensor_reading_round_trip(
         reading = reading_model.to_data()
         assert reading == reading_data
         assert reading.as_timezone(tzinfo).serialize_str() == line_str
+
+
+def test_get_online_statuses_for_influx_backfill_selection(
+    db_session: Session,
+    base_unit_factory: Callable[[str], BaseUnitModel],
+) -> None:
+    """Select unuploaded rows plus stale/missing latest per BaseUnit
+
+    This validates the intended dual-branch behavior:
+
+    1. Any row with uploaded_to_influx=False is always selected.
+    2. The latest row per BaseUnit is selected when last_upload_to_influx is
+       missing or outside the configured time window.
+
+    """
+    now = datetime.datetime(2024, 1, 1, 12, 0, tzinfo=datetime.timezone.utc)
+    window = datetime.timedelta(hours=1)
+
+    base_unit_a = base_unit_factory("a")
+    base_unit_b = base_unit_factory("b")
+    base_unit_c = base_unit_factory("c")
+
+    status_a_old_unuploaded = BaseUnitOnlineStatusModel(
+        base_unit_id=base_unit_a.id,
+        timestamp=now - datetime.timedelta(hours=3),
+        online=True,
+        uploaded_to_influx=False,
+        last_upload_to_influx=now - datetime.timedelta(minutes=5),
+    )
+    status_a_latest_recent = BaseUnitOnlineStatusModel(
+        base_unit_id=base_unit_a.id,
+        timestamp=now - datetime.timedelta(minutes=30),
+        online=True,
+        uploaded_to_influx=True,
+        last_upload_to_influx=now - datetime.timedelta(minutes=5),
+    )
+    status_b_latest_stale = BaseUnitOnlineStatusModel(
+        base_unit_id=base_unit_b.id,
+        timestamp=now - datetime.timedelta(minutes=20),
+        online=False,
+        uploaded_to_influx=True,
+        last_upload_to_influx=now - datetime.timedelta(hours=2),
+    )
+    status_c_latest_missing_upload_ts = BaseUnitOnlineStatusModel(
+        base_unit_id=base_unit_c.id,
+        timestamp=now - datetime.timedelta(minutes=10),
+        online=True,
+        uploaded_to_influx=True,
+        last_upload_to_influx=None,
+    )
+
+    db_session.add_all([
+        status_a_old_unuploaded,
+        status_a_latest_recent,
+        status_b_latest_stale,
+        status_c_latest_missing_upload_ts,
+    ])
+    db_session.commit()
+
+    query = get_online_statuses_for_influx_backfill(
+        db_session,
+        time_series_window=window,
+        now=now,
+    )
+    results = query.all()
+
+    result_ids = {status.id for status in results}
+    expected_ids = {
+        status_a_old_unuploaded.id,
+        status_b_latest_stale.id,
+        status_c_latest_missing_upload_ts.id,
+    }
+
+    assert result_ids == expected_ids
+    assert status_a_latest_recent.id not in result_ids
 
 
 

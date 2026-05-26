@@ -449,6 +449,14 @@ class BaseUnitOnlineStatus(Base[BaseUnitOnlineStatusNaturalKey, _BaseUnitOnlineS
     """Whether the BaseUnit is online (True) or offline (False)"""
     uploaded_to_influx: Mapped[bool] = mapped_column(nullable=False, default=False)
     """Whether this status entry has been uploaded to InfluxDB"""
+    last_upload_to_influx: Mapped[datetime.datetime|None] = mapped_column(nullable=True)
+    """The timestamp of the last time this status entry was uploaded to InfluxDB,
+    or None if it has never been uploaded
+
+    This field can be used to ensure there is a record within a certain time range
+    to avoid gaps in the time series data in InfluxDB, even if the online
+    status hasn't changed.
+    """
     base_unit_id: Mapped[int] = mapped_column(ForeignKey("base_units.id"), nullable=False)
 
     base_unit: Mapped[BaseUnit] = relationship("BaseUnit", back_populates="online_statuses")

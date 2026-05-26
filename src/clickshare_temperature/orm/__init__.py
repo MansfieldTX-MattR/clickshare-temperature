@@ -10,6 +10,7 @@ from .engine import (
 from .models import (
     BaseUnit,
     BaseUnitIdentity,
+    BaseUnitOnlineStatus,
     PowerManagementSettings,
     PowerManagementStatus,
     BaseUnitStatus,
@@ -26,6 +27,7 @@ __all__ = [
     "get_session",
     "BaseUnit",
     "BaseUnitIdentity",
+    "BaseUnitOnlineStatus",
     "PowerManagementSettings",
     "PowerManagementStatus",
     "BaseUnitStatus",
