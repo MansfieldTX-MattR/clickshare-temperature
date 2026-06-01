@@ -10,11 +10,12 @@ import click
 import click_extra
 # from yarl import URL
 from aiohttp import ClientSession, ClientError
-from sqlalchemy import create_engine as sa_create_engine, and_, or_
+from sqlalchemy import create_mock_engine, and_, or_
 from sqlalchemy.orm import Query, Session
 
 if TYPE_CHECKING:
-    from sqlalchemy.engine import Engine
+    from sqlalchemy.sql.ddl import BaseDDLElement
+    from sqlalchemy.engine.mock import MockConnection
 
 from ..types import (
     AuthInfo,
@@ -30,10 +31,11 @@ from ..baseunit_api import (
     get_power_management_info,
 )
 
+from .base import Base
 from .engine import (
-    EngineBuilder,
     get_session as get_db_session,
     set_engine_uri,
+    create_engine_uri,
     init_db,
 )
 from .models import (
@@ -796,14 +798,25 @@ def backfill_influx(ctx_obj: CLIDbContext) -> None:
 
 
 @cli.command()
-def show_db_schema() -> None:
-    def _create_tmp_engine() -> Engine:
-        return sa_create_engine("sqlite:///:memory:", echo=True)
+@click_extra.option(
+    "--dialect",
+    type=click.Choice(["sqlite", "postgresql", "mysql"], case_sensitive=False),
+    default="sqlite",
+)
+def show_db_schema(dialect: str) -> None:
+    """Print the SQL CREATE TABLE statements for all tables in the database schema.
+    """
+    mock_engine: MockConnection|None = None
 
-    EngineBuilder.set_builder(_create_tmp_engine)
-    # This will create the tables in the in-memory SQLite database
-    # and print the SQL statements to the console
-    init_db()
+    def executor(sql: BaseDDLElement, *multiparams: object, **params: object) -> None:
+        assert mock_engine is not None
+        click.echo(sql.compile(dialect=mock_engine.dialect))
+
+    # This will print the CREATE TABLE statements for all tables in the schema
+    # using a mocked engine.
+    uri = create_engine_uri(scheme=dialect, path="")
+    mock_engine = create_mock_engine(uri, executor)
+    Base.metadata.create_all(mock_engine)
 
 
 @cli.command()
