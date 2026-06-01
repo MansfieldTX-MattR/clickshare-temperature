@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Callable, cast, TYPE_CHECKING
+from typing import Callable, TYPE_CHECKING
 import asyncio
 import warnings
 from pathlib import Path
@@ -10,11 +10,12 @@ import click
 import click_extra
 # from yarl import URL
 from aiohttp import ClientSession, ClientError
-from sqlalchemy import Engine, create_mock_engine, and_, or_
+from sqlalchemy import create_mock_engine, and_, or_
 from sqlalchemy.orm import Query, Session
 
 if TYPE_CHECKING:
     from sqlalchemy.sql.ddl import BaseDDLElement
+    from sqlalchemy.engine.mock import MockConnection
 
 from ..types import (
     AuthInfo,
@@ -30,8 +31,8 @@ from ..baseunit_api import (
     get_power_management_info,
 )
 
+from .base import Base
 from .engine import (
-    EngineBuilder,
     get_session as get_db_session,
     set_engine_uri,
     create_engine_uri,
@@ -805,19 +806,17 @@ def backfill_influx(ctx_obj: CLIDbContext) -> None:
 def show_db_schema(dialect: str) -> None:
     """Print the SQL CREATE TABLE statements for all tables in the database schema.
     """
+    mock_engine: MockConnection|None = None
+
     def executor(sql: BaseDDLElement, *multiparams: object, **params: object) -> None:
-        e = EngineBuilder.create_engine()
-        print(sql.compile(dialect=e.dialect))
+        assert mock_engine is not None
+        print(sql.compile(dialect=mock_engine.dialect))
 
-    def _create_tmp_engine() -> Engine:
-        uri = create_engine_uri(scheme=dialect, path="")
-        mock_engine = create_mock_engine(uri, executor)
-        return cast(Engine, mock_engine)
-
-    EngineBuilder.set_builder(_create_tmp_engine)
-    # This will trigger the creation of a mocked engine and print
-    # the CREATE TABLE statements for all tables in the schema.
-    init_db()
+    # This will print the CREATE TABLE statements for all tables in the schema
+    # using a mocked engine.
+    uri = create_engine_uri(scheme=dialect, path="")
+    mock_engine = create_mock_engine(uri, executor)
+    Base.metadata.create_all(mock_engine)
 
 
 @cli.command()
