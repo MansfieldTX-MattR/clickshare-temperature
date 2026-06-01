@@ -799,7 +799,7 @@ def backfill_influx(ctx_obj: CLIDbContext) -> None:
 
 @cli.command()
 @click.option(
-    "--dialect", "-d",
+    "--dialect",
     type=click.Choice(["sqlite", "postgresql", "mysql"], case_sensitive=False),
     default="sqlite",
 )
