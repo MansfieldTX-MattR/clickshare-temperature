@@ -810,7 +810,7 @@ def show_db_schema(dialect: str) -> None:
 
     def executor(sql: BaseDDLElement, *multiparams: object, **params: object) -> None:
         assert mock_engine is not None
-        print(sql.compile(dialect=mock_engine.dialect))
+        click.echo(sql.compile(dialect=mock_engine.dialect))
 
     # This will print the CREATE TABLE statements for all tables in the schema
     # using a mocked engine.
