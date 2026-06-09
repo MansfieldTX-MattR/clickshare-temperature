@@ -550,21 +550,33 @@ class BaseUnit(Base[BaseUnitNaturalKey, _BaseUnitSerializeTD]):
     def serialize(self) -> _BaseUnitSerializeTD:
         """Serialize this instance to a dictionary for JSON serialization
         """
+        location_key = self.location.natural_key if self.location is not None else None
         return {
             "natural_key": self.natural_key,
             "ip_address": self.ip_address,
             "hostname": self.hostname,
             "room_name": self.room_name,
+            "location": RelationshipNaturalKey(
+                related_model_table="locations",
+                related_model_key=location_key,
+            ) if location_key is not None else None,
         }
 
     @classmethod
     def deserialize(cls, data: _BaseUnitSerializeTD, session: Session) -> Self|None:
         """Deserialize a dictionary into a an instance of this model
         """
+        if data["location"] is not None:
+            location = Location.get_by_natural_key(session, data["location"].related_model_key)
+            if location is None:
+                return None
+        else:
+            location = None
         return cls(
             ip_address=data["ip_address"],
             hostname=data["hostname"],
             room_name=data["room_name"],
+            location=location,
         )
 
     @classmethod
