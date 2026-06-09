@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import NewType, Union, Literal, Self
+from typing import NewType, ClassVar, Union, Literal, Self
 import datetime
 
 from aiohttp import ClientSession
@@ -10,8 +10,10 @@ from sqlalchemy.orm import (
     mapped_column,
     relationship,
     Query,
+    aliased,
 )
-from sqlalchemy import ForeignKey, tuple_
+from sqlalchemy.sql.expression import Select
+from sqlalchemy import ForeignKey, Index, func, select, tuple_
 from sqlalchemy.schema import UniqueConstraint
 
 from .base import Base
@@ -36,11 +38,14 @@ from ..temperature_history import (
 from .. import timezone
 from ..timezone import ensure_aware
 from ..utils import click_secho
-from .types import Ordering, RelationshipNaturalKey, _BaseModelSerializeTD
+from .types import (
+    Ordering, LocationSiblingType, RelationshipNaturalKey, _BaseModelSerializeTD,
+)
 
 DtIsoStr = NewType("DtIsoStr", str)
 
 
+type LocationNaturalKey = tuple[str, ...]
 type BaseUnitNaturalKey = str
 type BaseUnitOnlineStatusNaturalKey = tuple[BaseUnitNaturalKey, int]
 type BaseUnitIdentityNaturalKey = BaseUnitNaturalKey
@@ -51,12 +56,17 @@ type BaseUnitUsageStatusNaturalKey = tuple[BaseUnitNaturalKey, int]
 type SensorReadingNaturalKey = tuple[BaseUnitNaturalKey, int]
 
 
+class _LocationSerializeTD(_BaseModelSerializeTD[LocationNaturalKey]):
+    name: str
+    description: str|None
+    parent_location_pathlist: LocationNaturalKey|None
 
 
 class _BaseUnitSerializeTD(_BaseModelSerializeTD[BaseUnitNaturalKey]):
     ip_address: str
     hostname: str
     room_name: str
+    location: RelationshipNaturalKey[LocationNaturalKey]|None
 
 class _BaseUnitOnlineStatusSerializeTD(_BaseModelSerializeTD[BaseUnitOnlineStatusNaturalKey]):
     base_unit: RelationshipNaturalKey[BaseUnitNaturalKey]
@@ -115,6 +125,345 @@ class _BaseUnitUsageStatusSerializeTD(_BaseModelSerializeTD[BaseUnitUsageStatusN
 
 
 
+class Location(Base[LocationNaturalKey, _LocationSerializeTD]):
+    """ORM model for a physical location where ClickShare BaseUnits are located
+
+    This model uses a self-referential relationship to represent a hierarchy of
+    locations, where each Location can have a :attr:`parent_location` and multiple :attr:`child_locations`.
+
+    The hierarchy can be of arbitrary depth, allowing for flexible organization
+    of locations (e.g. building -> floor -> room).
+    """
+    __tablename__ = "locations"
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(nullable=False)
+    """Name of the location"""
+    parent_location_id: Mapped[int|None] = mapped_column(ForeignKey("locations.id"), nullable=True)
+    parent_location: Mapped[Location|None] = relationship(
+        remote_side=[id],
+        back_populates="child_locations",
+        lazy="selectin",
+    )
+    """The parent location of this location, or None if this location has no parent"""
+    child_locations: Mapped[list[Location]] = relationship(
+        back_populates="parent_location",
+        cascade="all, delete-orphan",
+    )
+    """The list of child locations that have this location as their parent"""
+
+    description: Mapped[str|None] = mapped_column(nullable=True)
+    """Description of the location"""
+
+    base_units: Mapped[list[BaseUnit]] = relationship(
+        back_populates="location",
+        passive_deletes=True,
+    )
+    """The list of :class:`BaseUnit` instances at this location"""
+
+    __table_args__ = (
+        # Unique constraint to ensure that there are no duplicate location
+        # names with the same parent location.
+        #
+        # A typical `UniqueConstraint` can't be used here because of the
+        # nullable `parent_location_id`.
+        # We have to use a unique index on the coalesced value of `parent_location_id`
+        # to treat NULL as a distinct value for the purposes of uniqueness.
+        Index(
+            "uix_name_parent_coalesce",
+            "name",
+            func.coalesce(parent_location_id, 0),
+            unique=True
+        ),
+    )
+
+    PATH_DELIMITER: ClassVar[str] = " -> "
+    """Delimiter used to separate location names in the full path of a location"""
+
+    @property
+    def is_root(self) -> bool:
+        """Whether this location is a root location (i.e. has no parent location)"""
+        return self.parent_location is None
+
+    @property
+    def root_location(self) -> Location:
+        """The root location of this location (i.e. the top-level parent location)"""
+        if self.parent_location is None:
+            return self
+        return self.parent_location.root_location
+
+    @property
+    def nest_level(self) -> int:
+        """The nest level of this location, where root locations have a nest level of 0,
+        their children have a nest level of 1, and so on.
+        """
+        if self.parent_location is None:
+            return 0
+        return self.parent_location.nest_level + 1
+
+    @property
+    def pathlist(self) -> tuple[str, ...]:
+        """The full path of this location as a list of location names.
+
+        Starts with the top-level parent location and ends with this location.
+        """
+        if self.parent_location is None:
+            return (self.name,)
+        return self.parent_location.pathlist + (self.name,)
+
+    @property
+    def path(self) -> str:
+        """The full path of this location, including parent locations,
+        separated by :attr:`PATH_DELIMITER`.
+
+        For example, a location with name "Room 101" and a parent location with name
+        "First Floor" would have a path of "First Floor -> Room 101".
+        """
+        return self.join_pathlist(*self.pathlist)
+
+    @classmethod
+    def join_pathlist(cls, *names: str) -> str:
+        """Join a list of location names into a full path string using the
+        :attr:`PATH_DELIMITER`
+        """
+        return cls.PATH_DELIMITER.join(names)
+
+    @classmethod
+    def split_path(cls, path: str) -> tuple[str, ...]:
+        """Split a full path string into a list of location names using the
+        :attr:`PATH_DELIMITER`
+
+        This is the inverse of :func:`join_pathlist`, so that for any list of names, calling
+        ``split_path(join_pathlist(*names))`` will return the original list of names.
+        """
+        return tuple(part for part in path.split(cls.PATH_DELIMITER))
+
+    @classmethod
+    def create_from_pathlist(cls, *names: str, session: Session) -> Self:
+        """Create a Location and any necessary parent Locations from a list of
+        location names
+
+        Each name given in the arguments (variable-length) will be used to either
+        find an existing Location with that name and the appropriate parent location, or
+        create a new one if it doesn't already exist.
+
+        Arguments:
+            *names: A variable number of location names, starting with the
+                top-level parent location and ending with the desired location
+                to create
+            session: The SQLAlchemy session to use for database operations
+
+        Returns:
+            The Location instance corresponding to the last name in the list,
+            which is the desired location to create
+        """
+        if not len(names):
+            raise ValueError("At least one location name must be provided")
+        with session.begin_nested():
+            parent_location = None
+            for name in names:
+                parent_id = parent_location.id if parent_location is not None else None
+                location = session.query(cls).filter_by(
+                    name=name,
+                    parent_location_id=parent_id,
+                ).one_or_none()
+                if location is None:
+                    location = cls(name=name, parent_location=parent_location)
+                    session.add(location)
+                    session.flush()
+                parent_location = location
+            assert parent_location is not None
+            return parent_location
+
+    @classmethod
+    def get_by_pathlist(cls, *names: str, session: Session) -> Self|None:
+        """Get a Location by its pathlist
+
+        This is similar to :meth:`create_from_pathlist`, but it only searches
+        for existing Locations and does not create any new ones.
+        If any location in the path does not exist, None is returned.
+
+        Arguments:
+            *names: A variable number of location names, starting with the
+                top-level parent location and ending with the desired location to get
+            session: The SQLAlchemy session to use for database operations
+
+        Returns:
+            The Location instance corresponding to the last name in the list,
+            or None if no such Location exists
+        """
+        if not len(names):
+            raise ValueError("At least one location name must be provided")
+        parent_location = None
+        for name in names:
+            parent_id = parent_location.id if parent_location is not None else None
+            location = session.query(cls).filter_by(
+                name=name,
+                parent_location_id=parent_id,
+            ).one_or_none()
+            if location is None:
+                return None
+            parent_location = location
+        assert parent_location is not None
+        return parent_location
+
+    @classmethod
+    def get_root_locations(cls, session: Session) -> Query[Self]:
+        """Get a query for all root locations (i.e. locations with no parent location)
+        """
+        return session.query(cls).filter_by(parent_location_id=None)
+
+    def get_sibling_type(self, session: Session) -> LocationSiblingType:
+        """Get the :type:`LocationSiblingType` of this Location among its
+        siblings with the same parent location
+        """
+        if self.get_sibling_count(session) == 1:
+            return "only"
+        if self.get_is_first_child(session):
+            return "first"
+        elif self.get_is_last_child(session):
+            return "last"
+        else:
+            return "middle"
+
+    def get_is_first_child(self, session: Session) -> bool:
+        """Check whether this Location is the first child of its parent location
+        """
+        if self.parent_location is None:
+            query = self.get_root_locations(session)
+            sibling_count = query.count()
+            if sibling_count == 0:
+                return True
+            query = query.slice(0, 1)
+            first_sibling = query.one()
+            return self.id == first_sibling.id
+        first_sibling = self.parent_location.child_locations[0]
+        return self.id == first_sibling.id
+
+    def get_is_last_child(self, session: Session) -> bool:
+        """Check whether this Location is the last child of its parent location
+        """
+        if self.parent_location is None:
+            query = self.get_root_locations(session)
+            sibling_count = query.count()
+            if sibling_count == 0:
+                return True
+            query = query.slice(sibling_count - 1, sibling_count)
+            last_sibling = query.one()
+            return self.id == last_sibling.id
+        sibling_count = len(self.parent_location.child_locations)
+        if sibling_count == 0:
+            return True
+        last_sibling = self.parent_location.child_locations[-1]
+        return self.id == last_sibling.id
+
+    def get_siblings_query(self, session: Session) -> Query[Self]:
+        """Get a query for all siblings of this Location, including itself
+        """
+        if self.parent_location is None:
+            return self.get_root_locations(session)
+        cls = self.__class__
+        return session.query(cls).filter_by(parent_location_id=self.parent_location_id)
+
+    def get_sibling_count(self, session: Session) -> int:
+        """Get the number of siblings of this Location, including itself
+        """
+        return self.get_siblings_query(session).count()
+
+    def get_descendants_query(self, session: Session) -> Select[tuple[Location]]:
+        """Get a query for all descendant Locations of this Location in depth-first order
+        """
+        cls = Location
+        base_q = select(cls.id, cls.parent_location_id).where(cls.parent_location_id == self.id)
+        cte = base_q.cte(name="descendants", recursive=True)
+
+        node_alias = aliased(cls, name="n")
+        recursive_q = select(node_alias.id, node_alias.parent_location_id).join(
+            cte, node_alias.parent_location_id == cte.c.id
+        )
+        cte_stmt = cte.union_all(recursive_q)
+        return select(cls).join(cte_stmt, cls.id == cte_stmt.c.id)
+
+    def get_base_units_query(self, session: Session, include_descendants: bool = False) -> Query[BaseUnit]:
+        """Get a query for all BaseUnits at this Location and optionally at all
+        descendant Locations
+
+        Arguments:
+            session: The SQLAlchemy session to use for database operations
+            include_descendants: Whether to include BaseUnits at descendant Locations
+
+        Returns:
+            A SQLAlchemy Query object for the BaseUnits at this Location and
+                optionally at descendant Locations
+        """
+        q = session.query(BaseUnit).filter_by(location_id=self.id)
+        if include_descendants:
+            descendant_locations_q = self.get_descendants_query(session=session).with_only_columns(Location.id)
+            q = q.union_all(
+                session.query(BaseUnit).filter(BaseUnit.location_id.in_(descendant_locations_q))
+            )
+        return q
+
+    def get_base_units(self, session: Session, include_descendants: bool = False) -> list[BaseUnit]:
+        """Get a list of all BaseUnits at this Location and optionally at all
+        descendant Locations
+
+        Arguments:
+            session: The SQLAlchemy session to use for database operations
+            include_descendants: Whether to include BaseUnits at descendant Locations
+
+        Returns:
+            A list of BaseUnit instances at this Location and optionally at
+                descendant Locations
+        """
+        return self.get_base_units_query(session=session, include_descendants=include_descendants).all()
+
+    @property
+    def natural_key(self) -> LocationNaturalKey:
+        """The natural key for this instance
+        """
+        return self.pathlist
+
+    @classmethod
+    def get_by_natural_key(cls, session: Session, key: LocationNaturalKey) -> Self|None:
+        """Get the instance of this model from the given natural key
+
+        If no instance exists, ``None`` is returned.
+        """
+        return cls.get_by_pathlist(*key, session=session)
+
+    def serialize(self) -> _LocationSerializeTD:
+        """Serialize this instance to a dictionary for JSON serialization
+        """
+        return _LocationSerializeTD(
+            natural_key=self.natural_key,
+            name=self.name,
+            description=self.description,
+            parent_location_pathlist=self.parent_location.pathlist if self.parent_location is not None else None,
+        )
+
+    @classmethod
+    def deserialize(cls, data: _LocationSerializeTD, session: Session) -> Self|None:
+        """Deserialize a dictionary into an instance of this model
+        """
+        parent_location = None
+        if data["parent_location_pathlist"] is not None:
+            parent_location = cls.get_by_pathlist(*data["parent_location_pathlist"], session=session)
+            if parent_location is None:
+                return None
+        instance = cls(
+            name=data["name"],
+            description=data["description"],
+            parent_location=parent_location,
+        )
+        return instance
+
+    def __repr__(self) -> str:
+        return f"<Location(id={self.id}, name={self.name}, path={self.path})>"
+
+    def __str__(self) -> str:
+        return f"Location '{self.path}'"
+
+
 class BaseUnit(Base[BaseUnitNaturalKey, _BaseUnitSerializeTD]):
     """ORM model for a ClickShare BaseUnit
     """
@@ -128,6 +477,12 @@ class BaseUnit(Base[BaseUnitNaturalKey, _BaseUnitSerializeTD]):
     """Hostname of the BaseUnit, which is used as the natural key"""
     room_name: Mapped[str] = mapped_column(nullable=False)
     """Name of the room where the BaseUnit is located"""
+    location_id: Mapped[int|None] = mapped_column(
+        ForeignKey("locations.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    location: Mapped[Location|None] = relationship(back_populates="base_units")
+    """The :class:`Location` for this BaseUnit, or None if no location is assigned"""
 
     identity: Mapped[BaseUnitIdentity] = relationship(
         "BaseUnitIdentity",
@@ -1186,6 +1541,7 @@ class SensorReading(Base[SensorReadingNaturalKey, _SensorReadingSerializeTD]):
 
 
 type ModelInstance = Union[
+    Location,
     BaseUnit,
     BaseUnitOnlineStatus,
     BaseUnitStatus,
@@ -1197,6 +1553,7 @@ type ModelInstance = Union[
 ]
 type ModelClass = type[ModelInstance]
 type ModelTableName = Literal[
+    "locations",
     "base_units",
     "base_unit_online_statuses",
     "base_unit_statuses",
@@ -1207,6 +1564,7 @@ type ModelTableName = Literal[
     "power_management_status"
 ]
 MODEL_CLASSES = (
+    Location,
     BaseUnit,
     BaseUnitOnlineStatus,
     BaseUnitIdentity,
