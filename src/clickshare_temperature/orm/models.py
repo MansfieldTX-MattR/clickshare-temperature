@@ -465,6 +465,21 @@ class Location(Base[LocationNaturalKey, _LocationSerializeTD]):
         """
         return self.get_siblings_query(session).count()
 
+    def get_ancestors_query(self) -> Select[tuple[Self]]:
+        """Get a query for all ancestor Locations of this Location, starting with the parent location and
+        ending with the top-level parent location
+        """
+        cls = self.__class__
+        base_q = select(cls.id, cls.parent_location_id).where(cls.id == self.parent_location_id)
+        cte = base_q.cte(name="ancestors", recursive=True)
+
+        node_alias = aliased(cls, name="n")
+        recursive_q = select(node_alias.id, node_alias.parent_location_id).join(
+            cte, node_alias.id == cte.c.parent_location_id
+        )
+        cte_stmt = cte.union_all(recursive_q)
+        return select(cls).join(cte_stmt, cls.id == cte_stmt.c.id)
+
     def get_descendants_query(self) -> Select[tuple[Location]]:
         """Get a query for all descendant Locations of this Location in depth-first order
         """

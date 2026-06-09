@@ -466,12 +466,44 @@ def test_location_model_hierarchy_uniqueness(
                 db_session.flush()
 
 
+def test_location_model_ancestors_query(
+    db_session: Session,
+    location_name_tree: list[PathList],
+    location_sibling_types: dict[PathList, LocationSiblingType],
+) -> None:
+    """Test the ancestors query of the Location model to ensure it correctly
+    retrieves all ancestors
+    """
+    for name_tuple in location_name_tree:
+        models.Location.create_from_pathlist(*name_tuple, session=db_session)
+    db_session.commit()
+
+    for name_tuple in location_name_tree:
+        location = models.Location.get_by_pathlist(*name_tuple, session=db_session)
+        assert location is not None
+        expected_ancestors = []
+        for i in range(1, len(name_tuple)):
+            ancestor_pathlist = name_tuple[:-i]
+            expected_ancestors.append(ancestor_pathlist)
+        discovered_ancestors = set[PathList]()
+        query = location.get_ancestors_query()
+        ancestors = db_session.execute(query).scalars().all()
+        for ancestor in ancestors:
+            assert ancestor.pathlist in expected_ancestors
+            sibling_type = ancestor.get_sibling_type(session=db_session)
+            assert location_sibling_types[ancestor.pathlist] == sibling_type
+            discovered_ancestors.add(ancestor.pathlist)
+        assert discovered_ancestors == set(expected_ancestors)
+
+
 def test_location_model_descendants_query(
     db_session: Session,
     location_name_tree: list[PathList],
     location_sibling_types: dict[PathList, LocationSiblingType],
 ) -> None:
-    """Test the descendants query of the Location model to ensure it correctly retrieves all descendants"""
+    """Test the descendants query of the Location model to ensure it correctly
+    retrieves all descendants
+    """
     for name_tuple in location_name_tree:
         models.Location.create_from_pathlist(*name_tuple, session=db_session)
     db_session.commit()
