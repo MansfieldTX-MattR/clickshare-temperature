@@ -8,6 +8,7 @@ from .engine import (
 )
 
 from .models import (
+    LocationType,
     Location,
     BaseUnit,
     BaseUnitIdentity,
@@ -26,6 +27,7 @@ __all__ = [
     "create_engine",
     "init_db",
     "get_session",
+    "LocationType",
     "Location",
     "BaseUnit",
     "BaseUnitIdentity",

@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import NewType, ClassVar, Union, Literal, Self
+from typing import NewType, ClassVar, Union, Literal, Self, overload
 import datetime
 
 from aiohttp import ClientSession
@@ -44,7 +44,7 @@ from .types import (
 
 DtIsoStr = NewType("DtIsoStr", str)
 
-
+type LocationTypeNaturalKey = str
 type LocationNaturalKey = tuple[str, ...]
 type BaseUnitNaturalKey = str
 type BaseUnitOnlineStatusNaturalKey = tuple[BaseUnitNaturalKey, int]
@@ -55,11 +55,15 @@ type BaseUnitStatusNaturalKey = tuple[BaseUnitNaturalKey, int]
 type BaseUnitUsageStatusNaturalKey = tuple[BaseUnitNaturalKey, int]
 type SensorReadingNaturalKey = tuple[BaseUnitNaturalKey, int]
 
+class _LocationTypeSerializeTD(_BaseModelSerializeTD[LocationTypeNaturalKey]):
+    name: str
+
 
 class _LocationSerializeTD(_BaseModelSerializeTD[LocationNaturalKey]):
     name: str
     description: str|None
     parent_location_pathlist: LocationNaturalKey|None
+    location_type: RelationshipNaturalKey[LocationTypeNaturalKey]|None
 
 
 class _BaseUnitSerializeTD(_BaseModelSerializeTD[BaseUnitNaturalKey]):
@@ -124,6 +128,68 @@ class _BaseUnitUsageStatusSerializeTD(_BaseModelSerializeTD[BaseUnitUsageStatusN
     uploaded_to_influx: bool
 
 
+class LocationType(Base[LocationTypeNaturalKey, _LocationTypeSerializeTD]):
+    """ORM model for a type of Location, which can be used to categorize :class:`Location` instances
+    (e.g. "Building", "Floor", "Room", etc.)
+    """
+    __tablename__ = "location_types"
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(unique=True, nullable=False)
+    """Name of the location type"""
+    locations: Mapped[list[Location]] = relationship(
+        back_populates="location_type",
+        lazy="selectin",
+    )
+    """The list of Location instances that have this location type"""
+
+    @overload
+    @classmethod
+    def get_by_name(cls, name: str, session: Session, raise_if_not_found: Literal[True]) -> Self:
+        ...
+    @overload
+    @classmethod
+    def get_by_name(cls, name: str, session: Session, raise_if_not_found: Literal[False] = False) -> Self|None:
+        ...
+    @classmethod
+    def get_by_name(cls, name: str, session: Session, raise_if_not_found: bool = False) -> Self|None:
+        """Get a LocationType by its name"""
+        if raise_if_not_found:
+            return session.query(cls).filter_by(name=name).one()
+        return session.query(cls).filter_by(name=name).one_or_none()
+
+    @property
+    def natural_key(self) -> LocationTypeNaturalKey:
+        """The natural key for this instance"""
+        return self.name
+
+    @classmethod
+    def get_by_natural_key(cls, session: Session, key: LocationTypeNaturalKey) -> Self|None:
+        """Get the instance of this model from the given natural key
+        If no instance exists, ``None`` is returned.
+        """
+        return session.query(cls).filter_by(name=key).one_or_none()
+
+    def serialize(self) -> _LocationTypeSerializeTD:
+        """Serialize this instance to a dictionary for JSON serialization"""
+        return _LocationTypeSerializeTD(
+            natural_key=self.natural_key,
+            name=self.name,
+        )
+
+    @classmethod
+    def deserialize(cls, data: _LocationTypeSerializeTD, session: Session) -> Self|None:
+        """Deserialize a dictionary into an instance of this model"""
+        instance = cls(
+            name=data["name"],
+        )
+        return instance
+
+    def __repr__(self) -> str:
+        return f"<LocationType(id={self.id}, name={self.name})>"
+
+    def __str__(self) -> str:
+        return f"LocationType '{self.name}'"
+
 
 class Location(Base[LocationNaturalKey, _LocationSerializeTD]):
     """ORM model for a physical location where ClickShare BaseUnits are located
@@ -138,6 +204,12 @@ class Location(Base[LocationNaturalKey, _LocationSerializeTD]):
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(nullable=False)
     """Name of the location"""
+    location_type_id: Mapped[int|None] = mapped_column(ForeignKey("location_types.id"), nullable=True)
+    location_type: Mapped[LocationType|None] = relationship(
+        back_populates="locations",
+        lazy="selectin",
+    )
+    """The type of the location, or None if no type is assigned"""
     parent_location_id: Mapped[int|None] = mapped_column(ForeignKey("locations.id"), nullable=True)
     parent_location: Mapped[Location|None] = relationship(
         remote_side=[id],
@@ -178,6 +250,11 @@ class Location(Base[LocationNaturalKey, _LocationSerializeTD]):
 
     PATH_DELIMITER: ClassVar[str] = " -> "
     """Delimiter used to separate location names in the full path of a location"""
+
+    @property
+    def location_type_name(self) -> str|None:
+        """The name of the :attr:`location_type` of this location, if one is assigned"""
+        return self.location_type.name if self.location_type is not None else None
 
     @property
     def is_root(self) -> bool:
@@ -236,6 +313,25 @@ class Location(Base[LocationNaturalKey, _LocationSerializeTD]):
         ``split_path(join_pathlist(*names))`` will return the original list of names.
         """
         return tuple(part for part in path.split(cls.PATH_DELIMITER))
+
+    @classmethod
+    def get_by_location_type(cls, location_type: LocationType|str, session: Session) -> list[Self]:
+        """Get a list of Location instances that have the given location type
+
+        Arguments:
+            location_type: The LocationType instance or name to filter by
+            session: The SQLAlchemy session to use for database operations
+
+        Returns:
+            A list of Location instances that have the given location type
+        """
+        if isinstance(location_type, str):
+            location_type = LocationType.get_by_name(
+                location_type,
+                session=session,
+                raise_if_not_found=True,
+            )
+        return session.query(cls).filter_by(location_type=location_type).all()
 
     @classmethod
     def create_from_pathlist(cls, *names: str, session: Session) -> Self:
@@ -439,6 +535,10 @@ class Location(Base[LocationNaturalKey, _LocationSerializeTD]):
             name=self.name,
             description=self.description,
             parent_location_pathlist=self.parent_location.pathlist if self.parent_location is not None else None,
+            location_type=RelationshipNaturalKey(
+                related_model_table="location_types",
+                related_model_key=self.location_type.natural_key,
+            ) if self.location_type is not None else None,
         )
 
     @classmethod
@@ -450,10 +550,16 @@ class Location(Base[LocationNaturalKey, _LocationSerializeTD]):
             parent_location = cls.get_by_pathlist(*data["parent_location_pathlist"], session=session)
             if parent_location is None:
                 return None
+        location_type = None
+        if data["location_type"] is not None:
+            location_type = LocationType.get_by_natural_key(session, data["location_type"].related_model_key)
+            if location_type is None:
+                return None
         instance = cls(
             name=data["name"],
             description=data["description"],
             parent_location=parent_location,
+            location_type=location_type,
         )
         return instance
 
@@ -532,6 +638,20 @@ class BaseUnit(Base[BaseUnitNaturalKey, _BaseUnitSerializeTD]):
         cascade="all, delete-orphan",
     )
     """The list of :class:`SensorReading` entries associated with this BaseUnit"""
+
+    @property
+    def location_type(self) -> LocationType|None:
+        """The :class:`LocationType` of the :attr:`location` of this BaseUnit,
+        or None if no location or location type is assigned
+        """
+        return self.location.location_type if self.location is not None else None
+
+    @property
+    def location_type_name(self) -> str|None:
+        """The name of the :class:`LocationType` of the :attr:`location` of this BaseUnit,
+        or None if no location or location type is assigned
+        """
+        return self.location_type.name if self.location_type is not None else None
 
     @property
     def natural_key(self) -> BaseUnitNaturalKey:
@@ -1553,6 +1673,7 @@ class SensorReading(Base[SensorReadingNaturalKey, _SensorReadingSerializeTD]):
 
 
 type ModelInstance = Union[
+    LocationType,
     Location,
     BaseUnit,
     BaseUnitOnlineStatus,
@@ -1565,6 +1686,7 @@ type ModelInstance = Union[
 ]
 type ModelClass = type[ModelInstance]
 type ModelTableName = Literal[
+    "location_types",
     "locations",
     "base_units",
     "base_unit_online_statuses",
@@ -1576,6 +1698,7 @@ type ModelTableName = Literal[
     "power_management_status"
 ]
 MODEL_CLASSES = (
+    LocationType,
     Location,
     BaseUnit,
     BaseUnitOnlineStatus,

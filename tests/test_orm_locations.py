@@ -23,7 +23,7 @@ from clickshare_temperature.types import BaseUnitInfo
 from conftest import _reset_engine
 
 type PathList = tuple[str, ...]
-
+type LocationTypeName = Literal["building", "floor", "room"]
 
 
 
@@ -156,6 +156,30 @@ def _iter_locations[T: (str, tuple[str, LocationSiblingType])] (
 
 
 @pytest.fixture
+def location_with_type_name(
+    location_root_names: list[str],
+    location_floor_names: list[str],
+    location_room_names: list[str],
+) -> dict[PathList, LocationTypeName]:
+    """Fixture that provides a mapping of location name tuples to their expected
+    LocationType names for testing
+    """
+    location_type_names: dict[PathList, LocationTypeName] = {}
+    for name_tuple in _iter_locations(
+        location_root_names,
+        location_floor_names,
+        location_room_names,
+    ):
+        if len(name_tuple) == 1:
+            location_type_names[name_tuple] = "building"
+        elif len(name_tuple) == 2:
+            location_type_names[name_tuple] = "floor"
+        elif len(name_tuple) == 3:
+            location_type_names[name_tuple] = "room"
+    return location_type_names
+
+
+@pytest.fixture
 def location_sibling_types(
     location_root_names_with_sibling_types: list[tuple[str, LocationSiblingType]],
     location_floor_names_with_sibling_types: list[tuple[str, LocationSiblingType]],
@@ -272,6 +296,108 @@ def base_unit_for_location_model(
         location_to_base_unit[name_tuple] = (base_units, location)
     db_session.commit()
     return location_to_base_unit
+
+
+@pytest.fixture
+def populated_locations(
+    db_session: Session,
+    location_name_tree: list[PathList],
+    location_with_type_name: dict[PathList, LocationTypeName],
+) -> dict[LocationTypeName, set[PathList]]:
+    """Fixture that creates populated locations with their associated LocationTypes
+    """
+    for location_type_name in set(location_with_type_name.values()):
+        _location_type = models.LocationType(name=location_type_name)
+        db_session.add(_location_type)
+    db_session.commit()
+
+    populated: dict[LocationTypeName, set[PathList]] = {}
+    for name_tuple in location_name_tree:
+        location = models.Location.create_from_pathlist(*name_tuple, session=db_session)
+        assert location.location_type is None
+        location_type_name = location_with_type_name[name_tuple]
+        location_type = models.LocationType.get_by_name(location_type_name, session=db_session)
+        assert location_type is not None
+        location.location_type = location_type
+        db_session.add(location)
+        if location_type_name not in populated:
+            populated[location_type_name] = set()
+        populated[location_type_name].add(name_tuple)
+    db_session.commit()
+    return populated
+
+
+def test_location_type_model_uniqueness(
+    db_session: Session,
+) -> None:
+    """Test that the unique constraint on the name of the LocationType model is enforced
+    """
+    location_type_name = "building"
+    location_type = models.LocationType(name=location_type_name)
+    db_session.add(location_type)
+    db_session.commit()
+
+    with db_session.begin_nested():
+        with pytest.raises(IntegrityError):
+            duplicate_location_type = models.LocationType(name=location_type_name)
+            db_session.add(duplicate_location_type)
+            db_session.flush()
+
+
+def test_location_model_types(
+    db_session: Session,
+    populated_locations: dict[LocationTypeName, set[PathList]],
+    location_with_type_name: dict[PathList, LocationTypeName],
+) -> None:
+    """Test that the LocationType relationships and attributes of the Location model are correctly set
+    """
+    for location_type_name, pathlists in populated_locations.items():
+        location_type = models.LocationType.get_by_name(location_type_name, session=db_session)
+        assert location_type is not None
+        for location in location_type.locations:
+            assert location.location_type is not None
+            assert location.location_type.name == location_type_name
+            assert location.location_type_name == location_type_name
+            assert location.pathlist in pathlists
+
+        for pathlist in pathlists:
+            location = models.Location.get_by_pathlist(*pathlist, session=db_session)
+            assert location is not None
+            assert location.location_type is not None
+            assert location.location_type.name == location_type_name
+            assert location.location_type_name == location_type_name
+
+    for pathlist, location_type_name in location_with_type_name.items():
+        location = models.Location.get_by_pathlist(*pathlist, session=db_session)
+        assert location is not None
+        assert location.location_type is not None
+        assert location.location_type.name == location_type_name
+        assert location.location_type_name == location_type_name
+
+
+def test_location_model_get_by_location_type(
+    db_session: Session,
+    populated_locations: dict[LocationTypeName, set[PathList]],
+) -> None:
+    """Test the get_by_location_type class method of the Location model to ensure it correctly retrieves
+    all locations with the given location type
+    """
+    for location_type_name, pathlists in populated_locations.items():
+        locations = models.Location.get_by_location_type(location_type_name, session=db_session)
+        assert len(locations) == len(pathlists)
+        for location in locations:
+            assert location.location_type is not None
+            assert location.location_type.name == location_type_name
+            assert location.pathlist in pathlists
+
+        location_type = models.LocationType.get_by_name(location_type_name, session=db_session)
+        assert location_type is not None
+        locations = models.Location.get_by_location_type(location_type, session=db_session)
+        assert len(locations) == len(pathlists)
+        for location in locations:
+            assert location.location_type is not None
+            assert location.location_type.name == location_type_name
+            assert location.pathlist in pathlists
 
 
 
@@ -458,6 +584,37 @@ def test_location_model_baseunit_assignment(
     assert base_units_seen == expected_all_base_units
 
 
+def test_baseunit_location_type_relationships(
+    db_session: Session,
+    base_unit_for_location_model: dict[PathList, tuple[list[models.BaseUnit], models.Location]],
+    populated_locations: dict[LocationTypeName, set[PathList]],
+) -> None:
+    """Test that the relationships between BaseUnits, Locations, and LocationTypes
+    are correctly established and that the attributes on the BaseUnit model are
+    correctly set based on the assigned Location and its LocationType
+    """
+    for pathlist, (base_units, location) in base_unit_for_location_model.items():
+        for base_unit in base_units:
+            base_unit.location = location
+            db_session.add(base_unit)
+    db_session.commit()
+
+    for location_type_name, pathlists in populated_locations.items():
+        location_type = models.LocationType.get_by_name(location_type_name, session=db_session)
+        assert location_type is not None
+        for pathlist in pathlists:
+            location = models.Location.get_by_pathlist(*pathlist, session=db_session)
+            assert location is not None
+            assert location.location_type is not None
+            assert location.location_type.name == location_type_name
+            base_units, _ = base_unit_for_location_model[pathlist]
+            for base_unit in base_units:
+                assert base_unit.location is location
+                assert base_unit in location.base_units
+                assert base_unit.location_type is location.location_type
+                assert base_unit.location_type_name == location_type_name
+
+
 
 @pytest.mark.parametrize("deletion_method", ["bulk_delete", "individual_delete", "descendant_delete"])
 def test_location_model_baseunit_assignment_deletion(
@@ -513,6 +670,8 @@ def test_location_model_serialization(
     db_session: Session,
     location_name_tree: list[PathList],
     location_sibling_types: dict[PathList, LocationSiblingType],
+    populated_locations: dict[PathList, tuple[models.Location, LocationTypeName]],
+    location_with_type_name: dict[PathList, LocationTypeName],
     base_unit_for_location_model: dict[PathList, tuple[list[models.BaseUnit], models.Location]],
     tmp_path: Path,
 ) -> None:
@@ -553,6 +712,12 @@ def test_location_model_serialization(
     assert db_session.query(models.Location).count() == 0
 
     deserialize_database(db_session, serialized_db_json)
+    for name_tuple, location_type_name in location_with_type_name.items():
+        location_type = models.LocationType.get_by_name(location_type_name, session=db_session)
+        assert location_type is not None
+        assert location_type.name == location_type_name
+        assert name_tuple in [loc.pathlist for loc in location_type.locations]
+
     for name_tuple in location_name_tree:
         deserialized_location = models.Location.get_by_pathlist(*name_tuple, session=db_session)
         assert deserialized_location is not None
@@ -569,6 +734,11 @@ def test_location_model_serialization(
             assert not deserialized_location.is_root
             assert parent.name == name_tuple[-2]
             assert parent.pathlist == name_tuple[:-1]
+
+        location_type_name = location_with_type_name[name_tuple]
+        assert deserialized_location.location_type is not None
+        assert deserialized_location.location_type.name == location_type_name
+        assert deserialized_location.location_type_name == location_type_name
 
 
     # Verify that each location has the correct BaseUnits assigned, and that the relationship is bidirectional
