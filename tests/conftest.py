@@ -4,6 +4,7 @@ from zoneinfo import ZoneInfo
 from pathlib import Path
 
 import pytest
+from sqlalchemy.orm import close_all_sessions as sa_close_all_sessions
 
 from clickshare_temperature.types import (
     BaseUnitInfo,
@@ -13,6 +14,7 @@ from clickshare_temperature.types import (
     PowerManagementInfo,
 )
 from clickshare_temperature.temperature_history import TemperatureHistory, SensorReading
+from clickshare_temperature import orm
 
 from log_data_helpers import (
     LOG_ARCHIVE_FILE,
@@ -24,6 +26,37 @@ from log_data_helpers import (
 
 
 type WithTimeStamp[T] = tuple[T, datetime.datetime]
+
+
+def _reset_engine():
+    if orm.engine.EngineBuilder.ENGINE is not None:
+        orm.engine.EngineBuilder.ENGINE.dispose()
+    orm.engine.EngineBuilder._Session = None
+    orm.engine.ENGINE_URI = None
+    orm.engine.EngineBuilder.ENGINE = None
+    sa_close_all_sessions()
+
+
+@pytest.fixture(scope="module")
+def module_scoped_tmp_path(tmp_path_factory):
+    return tmp_path_factory.mktemp("module_scope")
+
+@pytest.fixture
+def uninitialized_db(tmp_path):
+    db_file = tmp_path / "test.db"
+    orm.set_engine_uri(f"sqlite:///{db_file}")
+    yield
+    _reset_engine()
+
+
+
+@pytest.fixture
+def db_session(uninitialized_db):
+    orm.init_db()
+    session = orm.get_session()
+    yield session
+    session.close()
+
 
 
 @pytest.fixture(params=LOG_ENTRY_TEST_CASES)

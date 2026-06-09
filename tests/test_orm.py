@@ -3,7 +3,6 @@ from typing import Callable, NamedTuple
 import datetime
 from pathlib import Path
 
-from sqlalchemy.orm import close_all_sessions
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import OperationalError, IntegrityError
 
@@ -21,7 +20,6 @@ from clickshare_temperature.orm import (
     BaseUnitUsageStatus as BaseUnitUsageStatusModel,
     SensorReading as SensorReadingModel,
 )
-from clickshare_temperature.orm import engine as engine_module
 from clickshare_temperature.orm.serialization import (
     serialize_database,
     deserialize_database,
@@ -37,38 +35,10 @@ from clickshare_temperature.types import (
     SensorType,
 )
 
+from conftest import _reset_engine
 
 type WithTimeStamp[T] = tuple[T, datetime.datetime]
 
-
-def _reset_engine():
-    if engine_module.EngineBuilder.ENGINE is not None:
-        engine_module.EngineBuilder.ENGINE.dispose()
-    engine_module.EngineBuilder._Session = None
-    engine_module.ENGINE_URI = None
-    engine_module.EngineBuilder.ENGINE = None
-    close_all_sessions()
-
-
-@pytest.fixture(scope="module")
-def module_scoped_tmp_path(tmp_path_factory):
-    return tmp_path_factory.mktemp("module_scope")
-
-@pytest.fixture
-def uninitialized_db(tmp_path):
-    db_file = tmp_path / "test.db"
-    set_engine_uri(f"sqlite:///{db_file}")
-    yield
-    _reset_engine()
-
-
-
-@pytest.fixture
-def db_session(uninitialized_db):
-    init_db()
-    session = get_session()
-    yield session
-    session.close()
 
 
 
