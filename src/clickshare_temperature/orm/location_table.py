@@ -18,6 +18,8 @@ class LocationTableRow(NamedTuple):
     """ID of the Location"""
     name: str
     """The :attr:`~.Location.name` of the Location"""
+    type: str|None
+    """The name of the :class:`.LocationType` of the Location, if any"""
     sibling_type: LocationSiblingType
     """The :meth:`sibling type <.Location.get_sibling_type>` of the Location"""
     index_: int
@@ -127,6 +129,23 @@ class LocationTableRow(NamedTuple):
         prefix = self.format_table_prefix()
         return prefix + self.name
 
+    def format_attr(self, key: LocationTableKey) -> str:
+        """Format a specific attribute for display in the table, applying any necessary
+        formatting based on the attribute type or value
+
+        Arguments:
+            key: The key of the attribute to format
+
+        Returns:
+            The formatted string to display in the table for this attribute
+        """
+        value = getattr(self, key)
+        if key == "name":
+            return self.format_table_name()
+        elif key == "type" and value is None:
+            return ""
+        return str(value)
+
     def get_table_row_items(
         self,
         header_keys: Sequence[LocationTableKey],
@@ -144,10 +163,7 @@ class LocationTableRow(NamedTuple):
             A tuple of the items to display in the table for this row,
             in the order of the header keys
         """
-        row_items = tuple(
-            getattr(self, key) if key != "name" else self.format_table_name()
-            for key in header_keys
-        )
+        row_items = tuple(self.format_attr(key) for key in header_keys)
         if highlight:
             row_items = tuple(
                 click.style(str(item), fg=click_extra.Color.bright_white, bold=True)
@@ -158,7 +174,7 @@ class LocationTableRow(NamedTuple):
 
 
 type LocationTableKey = Literal[
-    "id", "name", "is_terminal", "index_", "nest_level", "parent", "sibling_type",
+    "id", "name", "type", "is_terminal", "index_", "nest_level", "parent", "sibling_type",
     "is_root", "parent_name", "baseunit_count", "baseunit_total_count",
 ]
 """A type representing the keys for the :class:`LocationTableRow` table display"""
@@ -166,6 +182,7 @@ type LocationTableKey = Literal[
 LOCATION_TABLE_TITLES: dict[LocationTableKey, str] = {
     "id": "ID",
     "name": "Name",
+    "type": "Type",
     "is_terminal": "Is Terminal",
     "index_": "Index",
     "nest_level": "Nest Level",
@@ -178,7 +195,9 @@ LOCATION_TABLE_TITLES: dict[LocationTableKey, str] = {
 }
 """A mapping of :class:`LocationTableKey` to the display titles for the table header"""
 
-DEFAULT_LOCATION_TABLE_KEYS: tuple[LocationTableKey, ...] = ("id", "name", "baseunit_total_count", "baseunit_count")
+DEFAULT_LOCATION_TABLE_KEYS: tuple[LocationTableKey, ...] = (
+    "id", "name", "type", "baseunit_total_count", "baseunit_count",
+)
 """The default keys to display in the location table, in order"""
 
 
@@ -203,6 +222,7 @@ def get_location_table_data(session: Session) -> list[LocationTableRow]:
         obj = LocationTableRow(
             id=location.id,
             name=location.name,
+            type=location.location_type_name,
             sibling_type=location.get_sibling_type(session),
             index_=current_index,
             is_root=location.is_root,

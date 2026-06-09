@@ -39,6 +39,7 @@ from .engine import (
     init_db,
 )
 from .models import (
+    LocationType,
     Location,
     BaseUnit,
     BaseUnitIdentity,
@@ -366,9 +367,19 @@ def list_locations(
 
 @location_cli.command(name="add")
 @click_extra.argument("name")
-@click_extra.option("--parent-id", "-p", help="ID of the parent location (optional)")
+@click_extra.option("--parent-id", help="ID of the parent location (optional)")
+@click_extra.option(
+    "--type",
+    "location_type_name",
+    help="Name of the LocationType for this Location (optional)",
+)
 @click_extra.pass_obj
-def add_location(ctx_obj: CLIDbContext, name: str, parent_id: int|None) -> None:
+def add_location(
+    ctx_obj: CLIDbContext,
+    name: str,
+    parent_id: int|None,
+    location_type_name: str|None
+) -> None:
     """Add a Location to the database, optionally as a child of an existing Location."""
     with get_db_session() as session:
         parent_location = None
@@ -377,10 +388,70 @@ def add_location(ctx_obj: CLIDbContext, name: str, parent_id: int|None) -> None:
             if parent_location is None:
                 click_secho(f"Parent location with ID {parent_id} not found, aborting", fg="red")
                 raise click.Abort()
-        new_location = Location(name=name, parent_location=parent_location)
+        if location_type_name is not None:
+            location_type = LocationType.get_by_name(location_type_name, session=session)
+            if location_type is None:
+                location_type = LocationType(name=location_type_name)
+                session.add(location_type)
+                session.flush()
+        else:
+            location_type = None
+        new_location = Location(
+            name=name,
+            parent_location=parent_location,
+            location_type=location_type,
+        )
         session.add(new_location)
         session.commit()
         click_secho(f"Added {new_location} with ID {new_location.id}", fg="green")
+
+
+@location_cli.command(name="set-type")
+@click_extra.argument("name", help="The name of the LocationType to set for the Location")
+@click_extra.argument("location_id", type=int, required=False, default=None)
+@location_table_option_group(default_keys=("index_", "name", "type"))
+@click_extra.pass_obj
+@click_extra.pass_context
+def set_location_type(
+    ctx: click.Context,
+    ctx_obj: CLIDbContext,
+    name: str,
+    location_id: int|None,
+    header_keys: Sequence[LocationTableKey] | None,
+) -> None:
+    """Set the LocationType for a Location in the database."""
+    with get_db_session() as session:
+        if location_id is None:
+            click_secho(
+                "No location ID provided. "\
+                "Please choose a location to set the LocationType for from the table below:",
+                fg="yellow",
+            )
+            location_data = show_locations_table(ctx, session, header_keys=header_keys)
+            location_data_by_index = {row.index_: row for row in location_data}
+            location_index = click.prompt(
+                "Enter the index of the location to set the LocationType for",
+                type=int,
+            )
+            location_row = location_data_by_index.get(location_index)
+            if location_row is None:
+                click_secho(f"Invalid location index {location_index}, aborting", fg="red")
+                raise click.Abort()
+            location_id = location_row.id
+
+        location = session.query(Location).filter_by(id=location_id).one_or_none()
+        if location is None:
+            click_secho(f"Location with ID {location_id} not found, aborting", fg="red")
+            raise click.Abort()
+        location_type = LocationType.get_by_name(name, session=session)
+        if location_type is None:
+            location_type = LocationType(name=name)
+            session.add(location_type)
+            session.flush()
+            click_secho(f"Created new LocationType '{name}' with ID {location_type.id}", fg="green")
+        location.location_type = location_type
+        session.commit()
+        click_secho(f"Set LocationType of {location} to '{name}'", fg="green")
 
 
 @location_cli.command(name="delete")
