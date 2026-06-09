@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import NamedTuple, TypedDict, Iterable, Self
+from typing import NamedTuple, TypedDict, Iterable, Self, Callable
 import datetime
 import os
 from pathlib import Path
@@ -24,6 +24,11 @@ INFLUX_URL = os.getenv("INFLUX_URL", "http://localhost:8086")
 INFLUX_TOKEN = os.getenv("INFLUX_TOKEN", "my-influxdb-token")
 INFLUX_ORG = os.getenv("INFLUX_ORG", "my-org")
 INFLUX_BUCKET = os.getenv("INFLUX_BUCKET", "clickshare_temperature")
+
+type TagsCallback[**P] = Callable[P, dict[str, str]]
+"""Type for a callback function that generates extra tags for InfluxDB points
+based on the input parameters.
+"""
 
 
 class LastReadingInfoTD(TypedDict):
@@ -161,7 +166,11 @@ class LastReadingsInfo(NamedTuple):
         )
 
 
-def reading_to_point(base_unit: BaseUnitInfo, reading: SensorReading[SensorType]) -> Point:
+def reading_to_point(
+    base_unit: BaseUnitInfo,
+    reading: SensorReading[SensorType],
+    **extra_tags: str
+) -> Point:
     """Convert a :class:`.SensorReading` to an InfluxDB `Point` for uploading to InfluxDB
     """
     assert reading.timestamp.tzinfo is not None, "Reading timestamp must be timezone-aware"
@@ -172,13 +181,16 @@ def reading_to_point(base_unit: BaseUnitInfo, reading: SensorReading[SensorType]
         .tag("sensor", reading.sensor) \
         .field(field, reading.value) \
         .time(reading.timestamp, WritePrecision.NS)
+    for tag_key, tag_value in extra_tags.items():
+        p.tag(tag_key, tag_value)
     return p
 
 
 def backfill_readings(
     base_unit: BaseUnitInfo,
     temperature_history: TemperatureHistory,
-    ignore_last_readings_info: bool = False
+    ignore_last_readings_info: bool = False,
+    tags_callback: TagsCallback[[BaseUnitInfo, SensorReading[SensorType]]] | None = None
 ) -> int:
     """Backfill sensor readings for a BaseUnit to InfluxDB, returning the number of points uploaded
     """
@@ -194,7 +206,11 @@ def backfill_readings(
     if not len(readings_to_upload):
         return 0
     with InfluxDBClient3(host=INFLUX_URL, token=INFLUX_TOKEN, org=INFLUX_ORG) as client:
-        points = [reading_to_point(base_unit, r) for r in readings_to_upload]
+        points = []
+        for r in readings_to_upload:
+            extra_tags = tags_callback(base_unit, r) if tags_callback is not None else {}
+            p = reading_to_point(base_unit, r, **extra_tags)
+            points.append(p)
         client.write(database=INFLUX_BUCKET, record=points)
         if not ignore_last_readings_info:
             last_readings_info.save()
@@ -205,7 +221,8 @@ def backfill_readings(
 def baseunit_online_status_to_point(
     base_unit: BaseUnitInfo,
     online: bool,
-    timestamp: datetime.datetime
+    timestamp: datetime.datetime,
+    **extra_tags: str
 ) -> Point:
     """Convert a :class:`.BaseUnitInfo` and online status to an InfluxDB `Point` for uploading to InfluxDB
     """
@@ -215,12 +232,15 @@ def baseunit_online_status_to_point(
         .tag("room_name", base_unit.room_name) \
         .field("online", online) \
         .time(timestamp, WritePrecision.NS)
+    for tag_key, tag_value in extra_tags.items():
+        p.tag(tag_key, tag_value)
     return p
 
 
 def baseunit_status_to_point(
     status: BaseUnitStatus|BaseUnitUsageStatus,
-    timestamp: datetime.datetime
+    timestamp: datetime.datetime,
+    **extra_tags: str
 ) -> Point:
     """Convert a :class:`.BaseUnitStatus` or :class:`.BaseUnitUsageStatus`
     object to an InfluxDB `Point` object for uploading to InfluxDB
@@ -239,13 +259,16 @@ def baseunit_status_to_point(
             .field("error_code", status.error_code) \
             .field("error_message", status.error_message or "") \
             .field("first_used_timestamp", int(status.first_used.timestamp()))
+    for tag_key, tag_value in extra_tags.items():
+        p.tag(tag_key, tag_value)
     return p
 
 
 def power_management_status_to_point(
     base_unit: BaseUnitInfo,
     mode: PowerModeStatus,
-    timestamp: datetime.datetime
+    timestamp: datetime.datetime,
+    **extra_tags: str
 ) -> Point:
     """Convert a :class:`.PowerManagementStatus` object to an InfluxDB `Point` object for
     uploading to InfluxDB
@@ -256,11 +279,14 @@ def power_management_status_to_point(
         .tag("room_name", base_unit.room_name) \
         .field("power_mode", mode) \
         .time(timestamp, WritePrecision.NS)
+    for tag_key, tag_value in extra_tags.items():
+        p.tag(tag_key, tag_value)
     return p
 
 
 def upload_baseunit_online_statuses(
-    statuses: Iterable[tuple[BaseUnitInfo, bool, datetime.datetime]]
+    statuses: Iterable[tuple[BaseUnitInfo, bool, datetime.datetime]],
+    tags_callback: TagsCallback[[BaseUnitInfo]] | None = None
 ) -> None:
     """Upload one or more :class:`.BaseUnitInfo` and online status tuples to InfluxDB
 
@@ -269,37 +295,42 @@ def upload_baseunit_online_statuses(
             indicating online status, and a timestamp for when the status was recorded
     """
     with InfluxDBClient3(host=INFLUX_URL, token=INFLUX_TOKEN, org=INFLUX_ORG) as client:
-        points = [
-            baseunit_online_status_to_point(base_unit, online, timestamp)
-            for base_unit, online, timestamp in statuses
-        ]
+        points = []
+        for base_unit, online, timestamp in statuses:
+            extra_tags = tags_callback(base_unit) if tags_callback is not None else {}
+            p = baseunit_online_status_to_point(base_unit, online, timestamp, **extra_tags)
+            points.append(p)
         client.write(database=INFLUX_BUCKET, record=points)
 
 
 def upload_baseunit_status(
-    statuses: Iterable[tuple[BaseUnitStatus|BaseUnitUsageStatus, datetime.datetime]]
+    statuses: Iterable[tuple[BaseUnitStatus|BaseUnitUsageStatus, datetime.datetime]],
+    tags_callback: TagsCallback[[BaseUnitStatus|BaseUnitUsageStatus]] | None = None
 ) -> None:
     """Upload one or more :class:`.BaseUnitStatus` or :class:`.BaseUnitUsageStatus`
     objects to InfluxDB
     """
     with InfluxDBClient3(host=INFLUX_URL, token=INFLUX_TOKEN, org=INFLUX_ORG) as client:
-        points = [
-            baseunit_status_to_point(status, timestamp)
-            for status, timestamp in statuses
-        ]
+        points = []
+        for status, timestamp in statuses:
+            extra_tags = tags_callback(status) if tags_callback is not None else {}
+            p = baseunit_status_to_point(status, timestamp, **extra_tags)
+            points.append(p)
         client.write(database=INFLUX_BUCKET, record=points)
 
 
 def upload_power_management_statuses(
-    statuses: Iterable[tuple[BaseUnitInfo, PowerModeStatus, datetime.datetime]]
+    statuses: Iterable[tuple[BaseUnitInfo, PowerModeStatus, datetime.datetime]],
+    tags_callback: TagsCallback[[BaseUnitInfo]] | None = None
 ) -> None:
     """Upload one or more :class:`.PowerManagementStatus` objects to InfluxDB
     """
     with InfluxDBClient3(host=INFLUX_URL, token=INFLUX_TOKEN, org=INFLUX_ORG) as client:
-        points = [
-            power_management_status_to_point(base_unit, mode, timestamp)
-            for base_unit, mode, timestamp in statuses
-        ]
+        points = []
+        for base_unit, mode, timestamp in statuses:
+            extra_tags = tags_callback(base_unit) if tags_callback is not None else {}
+            p = power_management_status_to_point(base_unit, mode, timestamp, **extra_tags)
+            points.append(p)
         client.write(database=INFLUX_BUCKET, record=points)
 
 
