@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Callable, TYPE_CHECKING
+from typing import Callable, Sequence, TYPE_CHECKING
 import asyncio
 import warnings
 from pathlib import Path
@@ -39,6 +39,7 @@ from .engine import (
     init_db,
 )
 from .models import (
+    Location,
     BaseUnit,
     BaseUnitIdentity,
     BaseUnitOnlineStatus,
@@ -47,6 +48,12 @@ from .models import (
     BaseUnitStatus,
     BaseUnitUsageStatus,
     SensorReading,
+)
+from .location_table import (
+    LOCATION_TABLE_TITLES,
+    DEFAULT_LOCATION_TABLE_KEYS,
+    LocationTableKey,
+    show_locations_table,
 )
 from .serialization import serialize_database, deserialize_database
 from ..temperature_history import TemperatureHistory
@@ -279,9 +286,13 @@ def add_baseunit(ctx_obj: CLIDbContext, base_unit_ips: tuple[str, ...]) -> None:
 
 
 @cli.command(name="list-baseunits")
+@click_extra.table_format_option    # type: ignore[untyped-decorator]
 @click_extra.pass_obj
-def list_baseunits(ctx_obj: CLIDbContext) -> None:
+@click_extra.pass_context
+def list_baseunits(ctx: click_extra.Context, ctx_obj: CLIDbContext) -> None:
     """List all BaseUnits in the database."""
+    header = ("Room Name", "Hostname", "IP Address", "Location")
+    data = []
     with get_db_session() as session:
         base_units = session.query(BaseUnit).all()
         if len(base_units) == 0:
@@ -289,7 +300,223 @@ def list_baseunits(ctx_obj: CLIDbContext) -> None:
             return
         click_secho(f"Found {len(base_units)} BaseUnits:", fg="green")
         for base_unit in base_units:
-            click.echo(f"- {base_unit.room_name} ({base_unit.hostname}, IP: {base_unit.ip_address})")
+            data.append((
+                base_unit.room_name,
+                base_unit.hostname,
+                base_unit.ip_address,
+                base_unit.location.path if base_unit.location else "None",
+            ))
+    ctx.print_table(data, header) # type: ignore[attr-defined]
+
+
+
+def location_table_option_group(
+    default_keys: Sequence[LocationTableKey] | None = None
+) -> Callable[[Callable[..., None]], Callable[..., None]]:
+    """Factory function to create a click option group decorator for location
+    table options with a specified default for the header keys
+
+    Arguments:
+        default_keys: The default header keys to use for the location table options
+            if not specified in the command line arguments.
+            If None, no default will be set and the header keys will be required.
+
+    """
+    if default_keys is None:
+        default_keys = DEFAULT_LOCATION_TABLE_KEYS
+
+    def decorator(func: Callable[..., None]) -> Callable[..., None]:
+        return click_extra.option_group(
+            "Location Table Options",
+            click_extra.table_format_option,
+            click_extra.option(
+                '-k', '--header-keys',
+                multiple=True,
+                type=click.Choice(LOCATION_TABLE_TITLES.keys()),
+                default=default_keys,
+                help="Keys to include in the table header and the order to display them." \
+                f" Defaults to {default_keys} if not specified.",
+            ),
+        )(func)
+    return decorator
+
+
+@cli.group(name="location")
+@click_extra.pass_context
+def location_cli(
+    ctx: click.Context,
+) -> None:
+    """CLI for managing Locations in the database"""
+    pass
+
+
+@location_cli.command(name="list")
+@location_table_option_group()
+@click_extra.pass_obj
+@click_extra.pass_context
+def list_locations(
+    ctx: click.Context,
+    ctx_obj: CLIDbContext,
+    header_keys: list[LocationTableKey] | None,
+) -> None:
+    """List all Locations in the database."""
+    with get_db_session() as session:
+        show_locations_table(ctx, session, header_keys=header_keys)
+
+
+@location_cli.command(name="add")
+@click_extra.argument("name")
+@click_extra.option("--parent-id", "-p", help="ID of the parent location (optional)")
+@click_extra.pass_obj
+def add_location(ctx_obj: CLIDbContext, name: str, parent_id: int|None) -> None:
+    """Add a Location to the database, optionally as a child of an existing Location."""
+    with get_db_session() as session:
+        parent_location = None
+        if parent_id is not None:
+            parent_location = session.query(Location).filter_by(id=parent_id).one_or_none()
+            if parent_location is None:
+                click_secho(f"Parent location with ID {parent_id} not found, aborting", fg="red")
+                raise click.Abort()
+        new_location = Location(name=name, parent_location=parent_location)
+        session.add(new_location)
+        session.commit()
+        click_secho(f"Added {new_location} with ID {new_location.id}", fg="green")
+
+
+@location_cli.command(name="delete")
+@click_extra.argument("location_id", type=int)
+@click_extra.pass_obj
+def delete_location(ctx_obj: CLIDbContext, location_id: int) -> None:
+    """Delete a Location from the database. Child locations will also be deleted."""
+    with get_db_session() as session:
+        location = session.query(Location).filter_by(id=location_id).one_or_none()
+        if location is None:
+            click_secho(f"Location with ID {location_id} not found, aborting", fg="red")
+            raise click.Abort()
+
+        if len(location.child_locations) > 0:
+            descendant_select = location.get_descendants_query(session)
+            descendant_ids_and_paths = {
+                (loc.id, loc.path)
+                for loc in session.execute(descendant_select).scalars().all()
+            }
+            descendant_count = len(descendant_ids_and_paths)
+            msg = [
+                f"{location} has {descendant_count} descendant location(s) that will also be deleted:",
+            ]
+            for i, (desc_id, desc_path) in enumerate(descendant_ids_and_paths):
+                if i >= 10:
+                    msg.append(f"... and {descendant_count - i} more")
+                    break
+                msg.append(f"- ID {desc_id}, path: {desc_path}")
+            click_secho("\n".join(msg), fg="yellow")
+            if not click.confirm(
+                "Are you sure you want to delete this location and all its descendants?",
+                default=False
+            ):
+                raise click.Abort()
+
+        location_str = str(location)
+        session.delete(location)
+        session.commit()
+        click_secho(f"Deleted {location_str} and all its child locations", fg="green")
+
+
+@location_cli.command(name="assign")
+@click_extra.argument("baseunit_hostname")
+@click_extra.argument("location_id", type=int, default=None, required=False)
+@location_table_option_group(default_keys=("index_", "name", "baseunit_count"))
+@click_extra.pass_obj
+@click_extra.pass_context
+def assign_baseunit_location(
+    ctx: click.Context,
+    ctx_obj: CLIDbContext,
+    baseunit_hostname: str,
+    location_id: int|None,
+    header_keys: Sequence[LocationTableKey] | None,
+) -> None:
+    """Assign a Location to a BaseUnit."""
+    required_keys: tuple[LocationTableKey, ...] = ("index_",)
+    if header_keys is None:
+        header_keys = ("index_", "name", "baseunit_count")
+    elif not all(key in header_keys for key in required_keys):
+        click_secho(
+            f"Warning: header keys {header_keys} do not include all required keys {required_keys}. " \
+            "Adding missing required keys to header keys for location selection.",
+            fg="yellow",
+        )
+        header_keys = list(header_keys) + [key for key in required_keys if key not in header_keys]
+
+    with get_db_session() as session:
+        base_unit = session.query(BaseUnit).filter_by(hostname=baseunit_hostname).one_or_none()
+        if base_unit is None:
+            click_secho(f"BaseUnit with hostname '{baseunit_hostname}' not found, aborting", fg="red")
+            raise click.Abort()
+
+        if location_id is None:
+            # Show the location table to allow the user to choose a location to assign to the BaseUnit
+            click_secho(
+                "No location ID provided. " \
+                "Please choose a location to assign to the BaseUnit from the table below:",
+            )
+            highlight_location_id = base_unit.location.id if base_unit.location is not None else None
+            location_data = show_locations_table(
+                ctx=ctx,
+                session=session,
+                header_keys=header_keys,
+                highlight_location_id=highlight_location_id,
+            )
+            location_data_by_index = {row.index_: row for row in location_data}
+            location_index = click.prompt(
+                "Enter the index of the location to assign to the BaseUnit",
+                type=int,
+            )
+            location_row = location_data_by_index.get(location_index)
+            if location_row is None:
+                click_secho(f"Invalid location index {location_index}, aborting", fg="red")
+                raise click.Abort()
+            location_id = location_row.id
+
+        location = session.query(Location).filter_by(id=location_id).one_or_none()
+        if location is None:
+            click_secho(f"Location with ID {location_id} not found, aborting", fg="red")
+            raise click.Abort()
+        if base_unit.location is not None and base_unit.location.id == location_id:
+            click_secho(
+                f"BaseUnit '{base_unit.hostname}' is already assigned to {location}, skipping",
+                fg="yellow",
+            )
+            return
+        if base_unit.location is not None and base_unit.location.id != location_id:
+            click_secho(
+                f"BaseUnit '{base_unit.hostname}' is already assigned to location "
+                f"{base_unit.location} (ID {base_unit.location.id}). ",
+                fg="yellow",
+            )
+            if not click.confirm(
+                f"Do you want to reassign it to {location}?",
+                default=False,
+            ):
+                raise click.Abort()
+        base_unit.location = location
+        session.commit()
+        click_secho(f"Assigned location {location} to BaseUnit '{base_unit.hostname}'", fg="green")
+
+
+@location_cli.command(name="unassign")
+@click_extra.argument("baseunit_hostname")
+@click_extra.pass_obj
+def unassign_baseunit_location(ctx_obj: CLIDbContext, baseunit_hostname: str) -> None:
+    """Unassign the Location from a BaseUnit."""
+    with get_db_session() as session:
+        base_unit = session.query(BaseUnit).filter_by(hostname=baseunit_hostname).one_or_none()
+        if base_unit is None:
+            click_secho(f"BaseUnit with hostname '{baseunit_hostname}' not found, aborting", fg="red")
+            raise click.Abort()
+        base_unit.location = None
+        session.commit()
+        click_secho(f"Unassigned location from BaseUnit '{base_unit.hostname}'", fg="green")
+
 
 
 @cli.command(name="update-baseunit-info")
