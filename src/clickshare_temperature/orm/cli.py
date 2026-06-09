@@ -982,6 +982,17 @@ def backfill_influx(ctx_obj: CLIDbContext) -> None:
         upload_baseunit_online_statuses,
     )
 
+    def get_extra_tags_for_baseunit(base_unit: BaseUnit) -> dict[str, str]:
+        tags: dict[str, str] = {}
+        if base_unit.location is None:
+            return tags
+        ancestor_locations_q = base_unit.location.get_ancestors_query()
+        ancestor_locations_q = ancestor_locations_q.filter(Location.location_type.isnot(None))
+        for ancestor in session.execute(ancestor_locations_q).scalars().all():
+            assert ancestor.location_type_name is not None
+            tags[ancestor.location_type_name] = ancestor.name
+        return tags
+
     def backfill_base_unit(session: Session, base_unit: BaseUnit) -> None:
         sensor_query = session.query(SensorReading).filter_by(
             base_unit_id=base_unit.id, uploaded_to_influx=False
@@ -997,6 +1008,7 @@ def backfill_influx(ctx_obj: CLIDbContext) -> None:
             temperature_history.base_unit,
             temperature_history,
             ignore_last_readings_info=True,
+            tags_callback=lambda base_unit_info, reading: {**get_extra_tags_for_baseunit(base_unit)},
         )
         click_secho(
             f"Backfill complete for BaseUnit '{base_unit.hostname}'. Backfilled {num_backfilled} readings.",
@@ -1035,7 +1047,14 @@ def backfill_influx(ctx_obj: CLIDbContext) -> None:
             else:
                 upload_timestamp = online_status.timestamp
             status_args.append((base_unit_info, online_status.online, upload_timestamp))
-        upload_baseunit_online_statuses(status_args)
+        upload_baseunit_online_statuses(
+            status_args,
+            tags_callback=lambda base_unit_info: get_extra_tags_for_baseunit(
+                session.query(BaseUnit).filter_by(
+                    hostname=base_unit_info.hostname
+                ).one()
+            ),
+        )
         for online_status in online_status_query.all():
             online_status.uploaded_to_influx = True
             online_status.last_upload_to_influx = now
@@ -1053,7 +1072,14 @@ def backfill_influx(ctx_obj: CLIDbContext) -> None:
             f"Backfilling and uploading {statuses.count()} {model_cls.__name__} entries...",
             fg="blue",
         )
-        upload_baseunit_status([(s.to_data(), s.timestamp) for s in statuses])
+        upload_baseunit_status(
+            [(s.to_data(), s.timestamp) for s in statuses],
+            tags_callback=lambda status_data: get_extra_tags_for_baseunit(
+                session.query(BaseUnit).filter_by(
+                    hostname=status_data.base_unit.hostname
+                ).one()
+            ),
+        )
         for status in statuses:
             status.uploaded_to_influx = True
         session.commit()
@@ -1074,7 +1100,14 @@ def backfill_influx(ctx_obj: CLIDbContext) -> None:
             (s.base_unit.to_data(), s.power_mode_status, s.timestamp)
             for s in power_statuses
         ]
-        upload_power_management_statuses(power_status_args)
+        upload_power_management_statuses(
+            power_status_args,
+            tags_callback=lambda base_unit_info: get_extra_tags_for_baseunit(
+                session.query(BaseUnit).filter_by(
+                    hostname=base_unit_info.hostname
+                ).one()
+            ),
+        )
         for power_status in power_statuses:
             power_status.uploaded_to_influx = True
         session.commit()
