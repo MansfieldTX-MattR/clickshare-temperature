@@ -484,7 +484,7 @@ def test_location_model_descendants_query(
         discovered_pathlists = set[PathList]()
         discovered_pathlists.add(root_location.pathlist)
 
-        query = root_location.get_descendants_query(session=db_session)
+        query = root_location.get_descendants_query()
         descendants = db_session.execute(query).scalars().all()
         for descendant in descendants:
             assert descendant is not root_location
@@ -511,7 +511,7 @@ def test_location_model_deletion_with_descendants(
     assert db_session.query(models.Location).count() == len(location_name_tree)
 
     for root_location in models.Location.get_root_locations(session=db_session):
-        descendant_query = root_location.get_descendants_query(session=db_session)
+        descendant_query = root_location.get_descendants_query()
         descendant_ids = {loc.id for loc in db_session.execute(descendant_query).scalars().all()}
         db_session.delete(root_location)
         db_session.commit()

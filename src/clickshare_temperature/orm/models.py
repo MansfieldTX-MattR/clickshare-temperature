@@ -465,7 +465,7 @@ class Location(Base[LocationNaturalKey, _LocationSerializeTD]):
         """
         return self.get_siblings_query(session).count()
 
-    def get_descendants_query(self, session: Session) -> Select[tuple[Location]]:
+    def get_descendants_query(self) -> Select[tuple[Location]]:
         """Get a query for all descendant Locations of this Location in depth-first order
         """
         cls = Location
@@ -493,7 +493,7 @@ class Location(Base[LocationNaturalKey, _LocationSerializeTD]):
         """
         q = session.query(BaseUnit).filter_by(location_id=self.id)
         if include_descendants:
-            descendant_locations_q = self.get_descendants_query(session=session).with_only_columns(Location.id)
+            descendant_locations_q = self.get_descendants_query().with_only_columns(Location.id)
             q = q.union_all(
                 session.query(BaseUnit).filter(BaseUnit.location_id.in_(descendant_locations_q))
             )

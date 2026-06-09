@@ -395,7 +395,7 @@ def delete_location(ctx_obj: CLIDbContext, location_id: int) -> None:
             raise click.Abort()
 
         if len(location.child_locations) > 0:
-            descendant_select = location.get_descendants_query(session)
+            descendant_select = location.get_descendants_query()
             descendant_ids_and_paths = {
                 (loc.id, loc.path)
                 for loc in session.execute(descendant_select).scalars().all()
