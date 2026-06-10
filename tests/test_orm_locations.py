@@ -351,6 +351,7 @@ def test_location_model_types(
 ) -> None:
     """Test that the LocationType relationships and attributes of the Location model are correctly set
     """
+    location: models.Location|None
     for location_type_name, pathlists in populated_locations.items():
         location_type = models.LocationType.get_by_name(location_type_name, session=db_session)
         assert location_type is not None
@@ -625,6 +626,7 @@ def test_baseunit_location_type_relationships(
     are correctly established and that the attributes on the BaseUnit model are
     correctly set based on the assigned Location and its LocationType
     """
+    location: models.Location|None
     for pathlist, (base_units, location) in base_unit_for_location_model.items():
         for base_unit in base_units:
             base_unit.location = location
