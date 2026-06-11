@@ -994,8 +994,15 @@ def fetch_readings_bulk(
 
 
 @update_cli.command(name="backfill-influx")
+@click_extra.option(
+    "--max-days",
+    type=int,
+    default=None,
+    required=False,
+    help="The maximum age of statuses to backfill, in days. If not specified, all statuses will be backfilled",
+)
 @click_extra.pass_obj
-def backfill_influx(ctx_obj: CLIDbContext) -> None:
+def backfill_influx(ctx_obj: CLIDbContext, max_days: int | None = None) -> None:
     """Backfill all existing statuses in the database to InfluxDB."""
     from ..influxdb import (
         upload_baseunit_status,
@@ -1003,6 +1010,14 @@ def backfill_influx(ctx_obj: CLIDbContext) -> None:
         upload_power_management_statuses,
         upload_baseunit_online_statuses,
     )
+
+    now = timezone.utcnow()
+    if max_days is not None:
+        max_backfill_window = datetime.timedelta(days=max_days)
+        earliest_backfill_time = now - max_backfill_window
+    else:
+        earliest_backfill_time = datetime.datetime.min.replace(tzinfo=datetime.timezone.utc)
+
 
     def get_extra_tags_for_baseunit(base_unit: BaseUnit, session: Session) -> dict[str, str]:
         tags: dict[str, str] = {}
@@ -1018,8 +1033,8 @@ def backfill_influx(ctx_obj: CLIDbContext) -> None:
 
     def backfill_base_unit(session: Session, base_unit: BaseUnit) -> None:
         sensor_query = session.query(SensorReading).filter_by(
-            base_unit_id=base_unit.id, uploaded_to_influx=False
-        )
+            base_unit_id=base_unit.id, uploaded_to_influx=False,
+        ).filter(SensorReading.timestamp >= earliest_backfill_time)
         if sensor_query.count() == 0:
             return
         click_secho(
@@ -1091,7 +1106,9 @@ def backfill_influx(ctx_obj: CLIDbContext) -> None:
         )
 
     def backfill_statuses[T: BaseUnitStatus | BaseUnitUsageStatus](session: Session, model_cls: type[T]) -> None:
-        statuses = session.query(model_cls).filter_by(uploaded_to_influx=False)
+        statuses = session.query(model_cls).filter_by(
+            uploaded_to_influx=False
+        ).filter(model_cls.timestamp >= earliest_backfill_time)
         if statuses.count() == 0:
             return
         click_secho(
@@ -1116,7 +1133,9 @@ def backfill_influx(ctx_obj: CLIDbContext) -> None:
         )
 
     def backfill_power_statuses(session: Session) -> None:
-        power_statuses = session.query(PowerManagementStatus).filter_by(uploaded_to_influx=False)
+        power_statuses = session.query(PowerManagementStatus).filter_by(
+            uploaded_to_influx=False
+        ).filter(PowerManagementStatus.timestamp >= earliest_backfill_time)
         if power_statuses.count() == 0:
             return
         click_secho(
