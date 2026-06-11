@@ -133,6 +133,7 @@ db_option_group = click_extra.option_group(
         envvar="CLICKSHARE_DB_URL",
         type=str,
         help="Database URL for SQLAlchemy (e.g. 'sqlite:///clickshare_data.db').",
+        show_envvar=True,
     ),
 )
 
@@ -164,7 +165,36 @@ def cli(ctx: click.Context, db_url: str|None) -> None:
         set_engine_uri(db_url)
 
 
-@cli.command(name="from-files")
+@cli.group(name="baseunit")
+@click_extra.pass_context
+def baseunit_cli(ctx: click.Context) -> None:
+    """CLI for managing BaseUnits in the database"""
+    pass
+
+
+@cli.group(name="manage")
+@click_extra.pass_context
+def manage_cli(ctx: click.Context) -> None:
+    """CLI for managing the database (e.g. initializing, resetting, etc.)"""
+    pass
+
+
+@cli.group(name="update")
+@click_extra.pass_context
+def update_cli(ctx: click.Context) -> None:
+    """CLI for updating information in the database by fetching data from the BaseUnits"""
+    pass
+
+
+@cli.group(name="location")
+@click_extra.pass_context
+def location_cli(ctx: click.Context) -> None:
+    """CLI for managing Locations in the database"""
+    pass
+
+
+
+@update_cli.command(name="from-files")
 @click_extra.argument(
     "directory",
     type=click.Path(exists=True, file_okay=False, path_type=Path),
@@ -207,7 +237,7 @@ def backfill_from_files(ctx_obj: CLIDbContext, directory: Path) -> None:
 
 
 
-@cli.command(name="add-baseunit")
+@baseunit_cli.command(name="add")
 @click_extra.argument("base_unit_ips", nargs=-1)
 @click_extra.pass_obj
 def add_baseunit(ctx_obj: CLIDbContext, base_unit_ips: tuple[str, ...]) -> None:
@@ -286,7 +316,7 @@ def add_baseunit(ctx_obj: CLIDbContext, base_unit_ips: tuple[str, ...]) -> None:
 
 
 
-@cli.command(name="list-baseunits")
+@baseunit_cli.command(name="list")
 @click_extra.table_format_option    # type: ignore[untyped-decorator]
 @click_extra.pass_obj
 @click_extra.pass_context
@@ -342,13 +372,6 @@ def location_table_option_group(
     return decorator
 
 
-@cli.group(name="location")
-@click_extra.pass_context
-def location_cli(
-    ctx: click.Context,
-) -> None:
-    """CLI for managing Locations in the database"""
-    pass
 
 
 @location_cli.command(name="list")
@@ -590,7 +613,7 @@ def unassign_baseunit_location(ctx_obj: CLIDbContext, baseunit_hostname: str) ->
 
 
 
-@cli.command(name="update-baseunit-info")
+@update_cli.command(name="baseunit-info")
 @click_extra.pass_obj
 def update_baseunit_info(ctx_obj: CLIDbContext) -> None:
     session_options = ctx_obj.aiohttp_session_options
@@ -670,7 +693,7 @@ def update_baseunit_info(ctx_obj: CLIDbContext) -> None:
     raise_communication_errors(asyncio.run, update_all_baseunit_infos())
 
 
-@cli.command(name="update-power-management")
+@update_cli.command(name="power-management")
 @click_extra.pass_obj
 def update_power_management_info(ctx_obj: CLIDbContext) -> None:
     """Fetch the power management settings and statuses for all BaseUnits in the database and update the database."""
@@ -743,7 +766,7 @@ def update_power_management_info(ctx_obj: CLIDbContext) -> None:
 
 
 
-@cli.command(name="update-statuses")
+@update_cli.command(name="statuses")
 # @click.option(
 #     "--upload-influx",
 #     is_flag=True,
@@ -879,7 +902,7 @@ def get_online_statuses_for_influx_backfill(
     )
 
 
-@cli.command()
+@update_cli.command(name="fetch-readings-bulk")
 @click_extra.option(
     "--baseunit-ip-file",
     type=click.Path(exists=True, dir_okay=False, path_type=Path),
@@ -971,9 +994,16 @@ def fetch_readings_bulk(
 
 
 
-@cli.command(name="backfill-influx")
+@update_cli.command(name="backfill-influx")
+@click_extra.option(
+    "--max-days",
+    type=click.IntRange(min=0),
+    default=None,
+    required=False,
+    help="The maximum age of statuses to backfill, in days. If not specified, all statuses will be backfilled",
+)
 @click_extra.pass_obj
-def backfill_influx(ctx_obj: CLIDbContext) -> None:
+def backfill_influx(ctx_obj: CLIDbContext, max_days: int | None = None) -> None:
     """Backfill all existing statuses in the database to InfluxDB."""
     from ..influxdb import (
         upload_baseunit_status,
@@ -981,6 +1011,14 @@ def backfill_influx(ctx_obj: CLIDbContext) -> None:
         upload_power_management_statuses,
         upload_baseunit_online_statuses,
     )
+
+    now = timezone.utcnow()
+    if max_days is not None:
+        max_backfill_window = datetime.timedelta(days=max_days)
+        earliest_backfill_time = now - max_backfill_window
+    else:
+        earliest_backfill_time = datetime.datetime.min.replace(tzinfo=datetime.timezone.utc)
+
 
     def get_extra_tags_for_baseunit(base_unit: BaseUnit, session: Session) -> dict[str, str]:
         tags: dict[str, str] = {}
@@ -996,8 +1034,8 @@ def backfill_influx(ctx_obj: CLIDbContext) -> None:
 
     def backfill_base_unit(session: Session, base_unit: BaseUnit) -> None:
         sensor_query = session.query(SensorReading).filter_by(
-            base_unit_id=base_unit.id, uploaded_to_influx=False
-        )
+            base_unit_id=base_unit.id, uploaded_to_influx=False,
+        ).filter(SensorReading.timestamp >= earliest_backfill_time)
         if sensor_query.count() == 0:
             return
         click_secho(
@@ -1069,7 +1107,9 @@ def backfill_influx(ctx_obj: CLIDbContext) -> None:
         )
 
     def backfill_statuses[T: BaseUnitStatus | BaseUnitUsageStatus](session: Session, model_cls: type[T]) -> None:
-        statuses = session.query(model_cls).filter_by(uploaded_to_influx=False)
+        statuses = session.query(model_cls).filter_by(
+            uploaded_to_influx=False
+        ).filter(model_cls.timestamp >= earliest_backfill_time)
         if statuses.count() == 0:
             return
         click_secho(
@@ -1094,7 +1134,9 @@ def backfill_influx(ctx_obj: CLIDbContext) -> None:
         )
 
     def backfill_power_statuses(session: Session) -> None:
-        power_statuses = session.query(PowerManagementStatus).filter_by(uploaded_to_influx=False)
+        power_statuses = session.query(PowerManagementStatus).filter_by(
+            uploaded_to_influx=False
+        ).filter(PowerManagementStatus.timestamp >= earliest_backfill_time)
         if power_statuses.count() == 0:
             return
         click_secho(
@@ -1134,7 +1176,7 @@ def backfill_influx(ctx_obj: CLIDbContext) -> None:
 
 
 
-@cli.command()
+@manage_cli.command(name="show-schema")
 @click_extra.option(
     "--dialect",
     type=click.Choice(["sqlite", "postgresql", "mysql"], case_sensitive=False),
@@ -1156,14 +1198,14 @@ def show_db_schema(dialect: str) -> None:
     Base.metadata.create_all(mock_engine)
 
 
-@cli.command()
+@manage_cli.command(name="init-db")
 @click_extra.pass_obj
 def init_database(ctx_obj: CLIDbContext) -> None:
     """Initialize the database by creating all tables."""
     init_db()
 
 
-@cli.command()
+@manage_cli.command(name="dump-db")
 @click_extra.argument(
     'output_file',
     type=click.Path(dir_okay=False, path_type=Path),
@@ -1181,7 +1223,7 @@ def dump_database(ctx_obj: CLIDbContext, output_file: Path, pretty: bool) -> Non
 
 
 
-@cli.command()
+@manage_cli.command(name="load-db")
 @click_extra.argument(
     'input_file',
     type=click.Path(exists=True, dir_okay=False, path_type=Path),
