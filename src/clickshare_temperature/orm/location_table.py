@@ -174,7 +174,7 @@ class LocationTableRow(NamedTuple):
 
 
 type LocationTableKey = Literal[
-    "id", "name", "type", "is_terminal", "index_", "nest_level", "parent", "sibling_type",
+    "id", "name", "type", "index_", "nest_level", "parent", "sibling_type",
     "is_root", "parent_name", "baseunit_count", "baseunit_total_count",
 ]
 """A type representing the keys for the :class:`LocationTableRow` table display"""
@@ -183,7 +183,6 @@ LOCATION_TABLE_TITLES: dict[LocationTableKey, str] = {
     "id": "ID",
     "name": "Name",
     "type": "Type",
-    "is_terminal": "Is Terminal",
     "index_": "Index",
     "nest_level": "Nest Level",
     "parent": "Parent",
