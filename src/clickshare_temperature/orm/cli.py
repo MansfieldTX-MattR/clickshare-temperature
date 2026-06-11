@@ -185,6 +185,13 @@ def update_cli(ctx: click.Context) -> None:
     pass
 
 
+@cli.group(name="location")
+@click_extra.pass_context
+def location_cli(ctx: click.Context) -> None:
+    """CLI for managing Locations in the database"""
+    pass
+
+
 
 @update_cli.command(name="from-files")
 @click_extra.argument(
@@ -364,13 +371,6 @@ def location_table_option_group(
     return decorator
 
 
-@cli.group(name="location")
-@click_extra.pass_context
-def location_cli(
-    ctx: click.Context,
-) -> None:
-    """CLI for managing Locations in the database"""
-    pass
 
 
 @location_cli.command(name="list")
