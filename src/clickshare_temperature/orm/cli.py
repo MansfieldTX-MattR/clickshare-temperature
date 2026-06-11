@@ -997,7 +997,7 @@ def fetch_readings_bulk(
 @update_cli.command(name="backfill-influx")
 @click_extra.option(
     "--max-days",
-    type=int,
+    type=click.IntRange(min=0),
     default=None,
     required=False,
     help="The maximum age of statuses to backfill, in days. If not specified, all statuses will be backfilled",
