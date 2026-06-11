@@ -62,6 +62,9 @@ def deserialize_all(
         item_rel_keys: dict[str, RelationshipNaturalKey] = {}
         for key, value in item["data"].items():
             if RelationshipNaturalKey.is_relationship_natural_key(value):
+                if isinstance(value["related_model_key"], list):
+                    # Convert lists back to tuples for immutability, if needed
+                    value["related_model_key"] = tuple(value["related_model_key"])
                 rel_key = RelationshipNaturalKey.deserialize(value)
                 relationship_keys.add(rel_key)
                 item_rel_keys[key] = rel_key

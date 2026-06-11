@@ -7,6 +7,19 @@ if TYPE_CHECKING:
 
 type Ordering = Literal["asc", "desc"]
 
+type LocationSiblingType = Literal["first", "middle", "last", "only"]
+"""A type representing the sibling status of a :class:`.Location` among its siblings
+with the same parent location.
+
+- "first": This Location is the first child among its siblings
+  (i.e. it has the lowest position in the order of children under the same parent location).
+- "middle": This Location is neither the first nor the last child among its siblings
+  (i.e. it has at least one sibling before it and at least one sibling after it
+  in the order of children under the same parent location).
+- "last": This Location is the last child among its siblings
+  (i.e. it has the highest position in the order of children under the same parent location).
+- "only": This Location is the only child under its parent location (i.e. it has no siblings).
+"""
 
 
 class DeserializationError(Exception):
