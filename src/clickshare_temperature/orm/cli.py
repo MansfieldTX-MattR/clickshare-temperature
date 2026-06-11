@@ -989,10 +989,9 @@ def backfill_influx(ctx_obj: CLIDbContext) -> None:
         if base_unit.location_type_name is not None:
             tags[base_unit.location_type_name] = base_unit.location.name
         ancestor_locations_q = base_unit.location.get_ancestors_query()
-        ancestor_locations_q = ancestor_locations_q.filter(Location.location_type.isnot(None))
         for ancestor in session.execute(ancestor_locations_q).scalars().all():
-            assert ancestor.location_type_name is not None
-            tags[ancestor.location_type_name] = ancestor.name
+            if ancestor.location_type_name is not None:
+                tags[ancestor.location_type_name] = ancestor.name
         return tags
 
     def backfill_base_unit(session: Session, base_unit: BaseUnit) -> None:
