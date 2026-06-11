@@ -1,10 +1,13 @@
-
+from typing import Iterator
 import datetime
 from zoneinfo import ZoneInfo
 from pathlib import Path
 
 import pytest
-from sqlalchemy.orm import close_all_sessions as sa_close_all_sessions
+from sqlalchemy.orm import (
+    Session as ORMSession,
+    close_all_sessions as sa_close_all_sessions
+)
 
 from clickshare_temperature.types import (
     BaseUnitInfo,
@@ -28,7 +31,7 @@ from log_data_helpers import (
 type WithTimeStamp[T] = tuple[T, datetime.datetime]
 
 
-def _reset_engine():
+def _reset_engine() -> None:
     if orm.engine.EngineBuilder.ENGINE is not None:
         orm.engine.EngineBuilder.ENGINE.dispose()
     orm.engine.EngineBuilder._Session = None
@@ -38,11 +41,11 @@ def _reset_engine():
 
 
 @pytest.fixture(scope="module")
-def module_scoped_tmp_path(tmp_path_factory):
+def module_scoped_tmp_path(tmp_path_factory: pytest.TempPathFactory) -> Path:
     return tmp_path_factory.mktemp("module_scope")
 
 @pytest.fixture
-def uninitialized_db(tmp_path):
+def uninitialized_db(tmp_path: Path) -> Iterator[None]:
     db_file = tmp_path / "test.db"
     orm.set_engine_uri(f"sqlite:///{db_file}")
     yield
@@ -51,7 +54,7 @@ def uninitialized_db(tmp_path):
 
 
 @pytest.fixture
-def db_session(uninitialized_db):
+def db_session(uninitialized_db: None) -> Iterator[ORMSession]:
     orm.init_db()
     session = orm.get_session()
     yield session
