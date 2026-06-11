@@ -779,8 +779,15 @@ def test_location_model_serialization(
     for name_tuple, base_unit_infos_expected in all_base_unit_infos.items():
         deserialized_location = models.Location.get_by_pathlist(*name_tuple, session=db_session)
         assert deserialized_location is not None
-        base_units = deserialized_location.base_units
-        assert len(base_units) == len(base_unit_infos_expected)
-        for base_unit_model, base_unit_info in zip(base_units, base_unit_infos_expected, strict=True):
+        base_units = sorted(
+            deserialized_location.base_units,
+            key=lambda bu: (bu.hostname, bu.ip_address),
+        )
+        expected_infos = sorted(
+            base_unit_infos_expected,
+            key=lambda info: (info.hostname, info.ip_address),
+        )
+        assert len(base_units) == len(expected_infos)
+        for base_unit_model, base_unit_info in zip(base_units, expected_infos, strict=True):
             assert base_unit_model.to_data() == base_unit_info
             assert base_unit_model.location is deserialized_location
