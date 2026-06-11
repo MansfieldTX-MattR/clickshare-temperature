@@ -982,7 +982,7 @@ def backfill_influx(ctx_obj: CLIDbContext) -> None:
         upload_baseunit_online_statuses,
     )
 
-    def get_extra_tags_for_baseunit(base_unit: BaseUnit) -> dict[str, str]:
+    def get_extra_tags_for_baseunit(base_unit: BaseUnit, session: Session) -> dict[str, str]:
         tags: dict[str, str] = {}
         if base_unit.location is None:
             return tags
@@ -1008,7 +1008,9 @@ def backfill_influx(ctx_obj: CLIDbContext) -> None:
             temperature_history.base_unit,
             temperature_history,
             ignore_last_readings_info=True,
-            tags_callback=lambda base_unit_info, reading: {**get_extra_tags_for_baseunit(base_unit)},
+            tags_callback=lambda base_unit_info, reading: {
+                **get_extra_tags_for_baseunit(base_unit, session=session)
+            },
         )
         click_secho(
             f"Backfill complete for BaseUnit '{base_unit.hostname}'. Backfilled {num_backfilled} readings.",
@@ -1052,7 +1054,8 @@ def backfill_influx(ctx_obj: CLIDbContext) -> None:
             tags_callback=lambda base_unit_info: get_extra_tags_for_baseunit(
                 session.query(BaseUnit).filter_by(
                     hostname=base_unit_info.hostname
-                ).one()
+                ).one(),
+                session=session,
             ),
         )
         for online_status in online_status_query.all():
@@ -1077,7 +1080,8 @@ def backfill_influx(ctx_obj: CLIDbContext) -> None:
             tags_callback=lambda status_data: get_extra_tags_for_baseunit(
                 session.query(BaseUnit).filter_by(
                     hostname=status_data.base_unit.hostname
-                ).one()
+                ).one(),
+                session=session,
             ),
         )
         for status in statuses:
@@ -1105,7 +1109,8 @@ def backfill_influx(ctx_obj: CLIDbContext) -> None:
             tags_callback=lambda base_unit_info: get_extra_tags_for_baseunit(
                 session.query(BaseUnit).filter_by(
                     hostname=base_unit_info.hostname
-                ).one()
+                ).one(),
+                session=session,
             ),
         )
         for power_status in power_statuses:
