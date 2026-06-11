@@ -133,6 +133,7 @@ db_option_group = click_extra.option_group(
         envvar="CLICKSHARE_DB_URL",
         type=str,
         help="Database URL for SQLAlchemy (e.g. 'sqlite:///clickshare_data.db').",
+        show_envvar=True,
     ),
 )
 
