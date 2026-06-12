@@ -1068,8 +1068,6 @@ def backfill_influx(
 
         def inner_backfill(sensor_query: Query[SensorReading]) -> int:
             """Inner function to backfill a chunk of sensor readings"""
-            if sensor_query.count() == 0:
-                return 0
             temperature_history = base_unit.to_temperature_history_data(session, sensor_query=sensor_query)
             num_backfilled = backfill_readings(
                 temperature_history.base_unit,
