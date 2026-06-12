@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Callable, Sequence, TYPE_CHECKING
+from typing import Callable, Sequence, Iterator, TYPE_CHECKING
 import asyncio
 import warnings
 from pathlib import Path
@@ -1002,8 +1002,20 @@ def fetch_readings_bulk(
     required=False,
     help="The maximum age of statuses to backfill, in days. If not specified, all statuses will be backfilled",
 )
+@click_extra.option(
+    "--max-points-per-batch",
+    type=click.IntRange(min=1),
+    default=1000,
+    required=False,
+    help="The maximum number of points to write to InfluxDB in a single batch",
+    show_default=True,
+)
 @click_extra.pass_obj
-def backfill_influx(ctx_obj: CLIDbContext, max_days: int | None = None) -> None:
+def backfill_influx(
+    ctx_obj: CLIDbContext,
+    max_days: int | None = None,
+    max_points_per_batch: int = 1000
+) -> None:
     """Backfill all existing statuses in the database to InfluxDB."""
     from ..influxdb import (
         upload_baseunit_status,
@@ -1011,6 +1023,16 @@ def backfill_influx(ctx_obj: CLIDbContext, max_days: int | None = None) -> None:
         upload_power_management_statuses,
         upload_baseunit_online_statuses,
     )
+
+    def iter_query_chunks[T](query: Query[T], chunk_size: int) -> Iterator[Query[T]]:
+        """Generic iterator to yield chunks of a SQLAlchemy query"""
+        offset = 0
+        while True:
+            chunk = query.offset(offset).limit(chunk_size)
+            if chunk.first() is None:
+                break
+            yield chunk
+            offset += chunk_size
 
     now = timezone.utcnow()
     if max_days is not None:
@@ -1036,28 +1058,41 @@ def backfill_influx(ctx_obj: CLIDbContext, max_days: int | None = None) -> None:
         sensor_query = session.query(SensorReading).filter_by(
             base_unit_id=base_unit.id, uploaded_to_influx=False,
         ).filter(SensorReading.timestamp >= earliest_backfill_time)
+        sensor_query = sensor_query.order_by(SensorReading.timestamp.asc())
         if sensor_query.count() == 0:
             return
         click_secho(
             f"Backfilling {sensor_query.count()} sensor readings for BaseUnit '{base_unit.hostname}'...",
             fg="blue",
         )
-        temperature_history = base_unit.to_temperature_history_data(session, sensor_query=sensor_query)
-        num_backfilled = backfill_readings(
-            temperature_history.base_unit,
-            temperature_history,
-            ignore_last_readings_info=True,
-            tags_callback=lambda base_unit_info, reading: {
-                **get_extra_tags_for_baseunit(base_unit, session=session)
-            },
-        )
+
+        def inner_backfill(sensor_query: Query[SensorReading]) -> int:
+            """Inner function to backfill a chunk of sensor readings"""
+            temperature_history = base_unit.to_temperature_history_data(session, sensor_query=sensor_query)
+            num_backfilled = backfill_readings(
+                temperature_history.base_unit,
+                temperature_history,
+                ignore_last_readings_info=True,
+                tags_callback=lambda base_unit_info, reading: {
+                    **get_extra_tags_for_baseunit(base_unit, session=session)
+                },
+            )
+            for reading in sensor_query.all():
+                reading.uploaded_to_influx = True
+            session.commit()
+            return num_backfilled
+
+        num_backfilled = 0
+        for sensor_query_chunk in iter_query_chunks(sensor_query, max_points_per_batch):
+            click_secho(
+                f"  Backfilling next batch of up to {max_points_per_batch} readings for BaseUnit '{base_unit.hostname}'...",
+                fg="blue",
+            )
+            num_backfilled += inner_backfill(sensor_query_chunk)
         click_secho(
             f"Backfill complete for BaseUnit '{base_unit.hostname}'. Backfilled {num_backfilled} readings.",
             fg="green",
         )
-        for reading in sensor_query.all():
-            reading.uploaded_to_influx = True
-        session.commit()
 
     def backfill_online_statuses(session: Session) -> None:
         now = timezone.utcnow()
@@ -1110,24 +1145,35 @@ def backfill_influx(ctx_obj: CLIDbContext, max_days: int | None = None) -> None:
         statuses = session.query(model_cls).filter_by(
             uploaded_to_influx=False
         ).filter(model_cls.timestamp >= earliest_backfill_time)
+        statuses = statuses.order_by(model_cls.timestamp.asc())
         if statuses.count() == 0:
             return
         click_secho(
             f"Backfilling and uploading {statuses.count()} {model_cls.__name__} entries...",
             fg="blue",
         )
-        upload_baseunit_status(
-            [(s.to_data(), s.timestamp) for s in statuses],
-            tags_callback=lambda status_data: get_extra_tags_for_baseunit(
-                session.query(BaseUnit).filter_by(
-                    hostname=status_data.base_unit.hostname
-                ).one(),
-                session=session,
-            ),
-        )
-        for status in statuses:
-            status.uploaded_to_influx = True
-        session.commit()
+        def backfill_inner(statuses: Query[T]) -> None:
+            """Inner function to backfill a chunk of statuses"""
+            upload_baseunit_status(
+                [(s.to_data(), s.timestamp) for s in statuses],
+                tags_callback=lambda status_data: get_extra_tags_for_baseunit(
+                    session.query(BaseUnit).filter_by(
+                        hostname=status_data.base_unit.hostname
+                    ).one(),
+                    session=session,
+                ),
+            )
+            for status in statuses:
+                status.uploaded_to_influx = True
+            session.commit()
+
+        for status_chunk in iter_query_chunks(statuses, max_points_per_batch):
+            click_secho(
+                f"  Backfilling next batch of up to {max_points_per_batch} {model_cls.__name__} entries...",
+                fg="blue",
+            )
+            backfill_inner(status_chunk)
+
         click_secho(
             f"Backfill complete for {model_cls.__name__}",
             fg="green",
@@ -1137,28 +1183,40 @@ def backfill_influx(ctx_obj: CLIDbContext, max_days: int | None = None) -> None:
         power_statuses = session.query(PowerManagementStatus).filter_by(
             uploaded_to_influx=False
         ).filter(PowerManagementStatus.timestamp >= earliest_backfill_time)
+        power_statuses = power_statuses.order_by(PowerManagementStatus.timestamp.asc())
         if power_statuses.count() == 0:
             return
         click_secho(
             f"Backfilling and uploading {power_statuses.count()} PowerManagementStatus entries...",
             fg="blue",
         )
-        power_status_args: list[tuple[BaseUnitInfo, PowerModeStatus, datetime.datetime]] = [
-            (s.base_unit.to_data(), s.power_mode_status, s.timestamp)
-            for s in power_statuses
-        ]
-        upload_power_management_statuses(
-            power_status_args,
-            tags_callback=lambda base_unit_info: get_extra_tags_for_baseunit(
-                session.query(BaseUnit).filter_by(
-                    hostname=base_unit_info.hostname
-                ).one(),
-                session=session,
-            ),
-        )
-        for power_status in power_statuses:
-            power_status.uploaded_to_influx = True
-        session.commit()
+
+        def backfill_inner(power_statuses: Query[PowerManagementStatus]) -> None:
+            """Inner function to backfill a chunk of PowerManagementStatus entries"""
+            power_status_args: list[tuple[BaseUnitInfo, PowerModeStatus, datetime.datetime]] = [
+                (s.base_unit.to_data(), s.power_mode_status, s.timestamp)
+                for s in power_statuses
+            ]
+            upload_power_management_statuses(
+                power_status_args,
+                tags_callback=lambda base_unit_info: get_extra_tags_for_baseunit(
+                    session.query(BaseUnit).filter_by(
+                        hostname=base_unit_info.hostname
+                    ).one(),
+                    session=session,
+                ),
+            )
+            for power_status in power_statuses:
+                power_status.uploaded_to_influx = True
+            session.commit()
+
+        for power_status_chunk in iter_query_chunks(power_statuses, max_points_per_batch):
+            click_secho(
+                f"  Backfilling next batch of up to {max_points_per_batch} PowerManagementStatus entries...",
+                fg="blue",
+            )
+            backfill_inner(power_status_chunk)
+
         click_secho(
             "Backfill complete for PowerManagementStatus",
             fg="green",

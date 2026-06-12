@@ -1,12 +1,14 @@
 from __future__ import annotations
-from typing import NamedTuple, TypedDict, Iterable, Self, Callable
+from typing import NamedTuple, Sequence, TypedDict, Iterable, Self, Callable
 import datetime
 import os
 from pathlib import Path
 import json
 
+from urllib3 import HTTPHeaderDict
 from dotenv import load_dotenv
 from influxdb_client_3 import InfluxDBClient3, Point, WritePrecision
+from influxdb_client_3.write_client.rest import ApiException as InfluxDBApiException
 import click
 
 from .temperature_history import SensorReading, TemperatureHistory
@@ -24,6 +26,38 @@ INFLUX_URL = os.getenv("INFLUX_URL", "http://localhost:8086")
 INFLUX_TOKEN = os.getenv("INFLUX_TOKEN", "my-influxdb-token")
 INFLUX_ORG = os.getenv("INFLUX_ORG", "my-org")
 INFLUX_BUCKET = os.getenv("INFLUX_BUCKET", "clickshare_temperature")
+
+
+class InfluxDBRateLimitExceededError(Exception):
+    """Raised when InfluxDB returns a 429 Too Many Requests error
+
+    Indicates that the rate limit has been exceeded.
+    """
+    retry_after: int | None
+    """Number of seconds to wait before retrying, if provided by the
+    InfluxDB API in the "Retry-After" header
+    """
+    retry_after_datetime: datetime.datetime | None
+    """Datetime indicating when to retry, calculated from the current time and
+    the retry_after value (if provided)
+    """
+    def __init__(self, message: str, retry_after: int | None = None) -> None:
+        super().__init__(message)
+        self.retry_after = retry_after
+        if retry_after is not None:
+            self.retry_after_datetime = datetime.datetime.now() + datetime.timedelta(seconds=retry_after)
+        else:
+            self.retry_after_datetime = None
+
+
+    def __str__(self) -> str:
+        base_message = super().__str__()
+        if self.retry_after is not None:
+            assert self.retry_after_datetime is not None
+            return f"{base_message} (retry after {self.retry_after} seconds at {self.retry_after_datetime.isoformat()})"
+        else:
+            return base_message
+
 
 type TagsCallback[**P] = Callable[P, dict[str, str]]
 """Type for a callback function that generates extra tags for InfluxDB points
@@ -166,6 +200,30 @@ class LastReadingsInfo(NamedTuple):
         )
 
 
+def upload_points(points: Sequence[Point]) -> None:
+    """Upload a sequence of InfluxDB `Point` objects to InfluxDB
+
+    Raises:
+        InfluxDBRateLimitExceededError: If the InfluxDB API returns a 429 Too Many Requests error
+            indicating that the rate limit has been exceeded
+        InfluxDBApiException: If the InfluxDB API returns any other error
+    """
+    with InfluxDBClient3(host=INFLUX_URL, token=INFLUX_TOKEN, org=INFLUX_ORG) as client:
+        try:
+            client.write(database=INFLUX_BUCKET, record=points)
+        except InfluxDBApiException as e:
+            if e.status == 429:
+                headers: HTTPHeaderDict = e.headers
+                retry_after_str = headers.get("Retry-After")
+                retry_after = int(retry_after_str) if retry_after_str is not None else None
+                raise InfluxDBRateLimitExceededError(
+                    "InfluxDB API rate limit exceeded",
+                    retry_after=retry_after,
+                )
+            else:
+                raise
+
+
 def reading_to_point(
     base_unit: BaseUnitInfo,
     reading: SensorReading[SensorType],
@@ -205,17 +263,15 @@ def backfill_readings(
                 last_readings_info = last_readings_info.update_with_reading(base_unit.hostname, r)
     if not len(readings_to_upload):
         return 0
-    with InfluxDBClient3(host=INFLUX_URL, token=INFLUX_TOKEN, org=INFLUX_ORG) as client:
-        points = []
-        for r in readings_to_upload:
-            extra_tags = tags_callback(base_unit, r) if tags_callback is not None else {}
-            p = reading_to_point(base_unit, r, **extra_tags)
-            points.append(p)
-        client.write(database=INFLUX_BUCKET, record=points)
-        if not ignore_last_readings_info:
-            last_readings_info.save()
-
-        return len(points)
+    points = []
+    for r in readings_to_upload:
+        extra_tags = tags_callback(base_unit, r) if tags_callback is not None else {}
+        p = reading_to_point(base_unit, r, **extra_tags)
+        points.append(p)
+    upload_points(points)
+    if not ignore_last_readings_info:
+        last_readings_info.save()
+    return len(points)
 
 
 def baseunit_online_status_to_point(
@@ -294,13 +350,12 @@ def upload_baseunit_online_statuses(
         statuses: An iterable of tuples containing a :class:`.BaseUnitInfo`, a boolean
             indicating online status, and a timestamp for when the status was recorded
     """
-    with InfluxDBClient3(host=INFLUX_URL, token=INFLUX_TOKEN, org=INFLUX_ORG) as client:
-        points = []
-        for base_unit, online, timestamp in statuses:
-            extra_tags = tags_callback(base_unit) if tags_callback is not None else {}
-            p = baseunit_online_status_to_point(base_unit, online, timestamp, **extra_tags)
-            points.append(p)
-        client.write(database=INFLUX_BUCKET, record=points)
+    points = []
+    for base_unit, online, timestamp in statuses:
+        extra_tags = tags_callback(base_unit) if tags_callback is not None else {}
+        p = baseunit_online_status_to_point(base_unit, online, timestamp, **extra_tags)
+        points.append(p)
+    upload_points(points)
 
 
 def upload_baseunit_status(
@@ -310,13 +365,12 @@ def upload_baseunit_status(
     """Upload one or more :class:`.BaseUnitStatus` or :class:`.BaseUnitUsageStatus`
     objects to InfluxDB
     """
-    with InfluxDBClient3(host=INFLUX_URL, token=INFLUX_TOKEN, org=INFLUX_ORG) as client:
-        points = []
-        for status, timestamp in statuses:
-            extra_tags = tags_callback(status) if tags_callback is not None else {}
-            p = baseunit_status_to_point(status, timestamp, **extra_tags)
-            points.append(p)
-        client.write(database=INFLUX_BUCKET, record=points)
+    points = []
+    for status, timestamp in statuses:
+        extra_tags = tags_callback(status) if tags_callback is not None else {}
+        p = baseunit_status_to_point(status, timestamp, **extra_tags)
+        points.append(p)
+    upload_points(points)
 
 
 def upload_power_management_statuses(
@@ -325,13 +379,12 @@ def upload_power_management_statuses(
 ) -> None:
     """Upload one or more :class:`.PowerManagementStatus` objects to InfluxDB
     """
-    with InfluxDBClient3(host=INFLUX_URL, token=INFLUX_TOKEN, org=INFLUX_ORG) as client:
-        points = []
-        for base_unit, mode, timestamp in statuses:
-            extra_tags = tags_callback(base_unit) if tags_callback is not None else {}
-            p = power_management_status_to_point(base_unit, mode, timestamp, **extra_tags)
-            points.append(p)
-        client.write(database=INFLUX_BUCKET, record=points)
+    points = []
+    for base_unit, mode, timestamp in statuses:
+        extra_tags = tags_callback(base_unit) if tags_callback is not None else {}
+        p = power_management_status_to_point(base_unit, mode, timestamp, **extra_tags)
+        points.append(p)
+    upload_points(points)
 
 
 def load_temperature_history_from_file(filepath: Path) -> TemperatureHistory:
