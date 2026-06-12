@@ -29,14 +29,17 @@ INFLUX_BUCKET = os.getenv("INFLUX_BUCKET", "clickshare_temperature")
 
 
 class InfluxDBRateLimitExceededError(Exception):
-    """Custom exception for when the InfluxDB API returns a 429 Too Many Requests error
-    indicating that the rate limit has been exceeded.
+    """Raised when InfluxDB returns a 429 Too Many Requests error
+
+    Indicates that the rate limit has been exceeded.
     """
     retry_after: int | None
-    """Number of seconds to wait before retrying, if provided by the InfluxDB API in the "Retry-After" header
+    """Number of seconds to wait before retrying, if provided by the
+    InfluxDB API in the "Retry-After" header
     """
     retry_after_datetime: datetime.datetime | None
-    """Datetime indicating when to retry, calculated from the current time and the retry_after value if provided
+    """Datetime indicating when to retry, calculated from the current time and
+    the retry_after value (if provided)
     """
     def __init__(self, message: str, retry_after: int | None = None) -> None:
         super().__init__(message)
