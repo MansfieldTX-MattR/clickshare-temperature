@@ -266,6 +266,8 @@ def backfill_readings(
         p = reading_to_point(base_unit, r, **extra_tags)
         points.append(p)
     upload_points(points)
+    if not ignore_last_readings_info:
+        last_readings_info.save()
     return len(points)
 
 
