@@ -1026,6 +1026,9 @@ def backfill_influx(
 
     def iter_query_chunks[T](query: Query[T], chunk_size: int) -> Iterator[Query[T]]:
         """Generic iterator to yield chunks of a SQLAlchemy query"""
+        if query.count() <= chunk_size:
+            yield query
+            return
         offset = 0
         while True:
             chunk = query.offset(offset).limit(chunk_size)
