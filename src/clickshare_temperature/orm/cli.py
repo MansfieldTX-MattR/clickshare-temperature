@@ -1037,12 +1037,12 @@ def backfill_influx(
             yield chunk
             offset += chunk_size
 
-    now = timezone.utcnow()
-    if max_days is not None:
-        max_backfill_window = datetime.timedelta(days=max_days)
-        earliest_backfill_time = now - max_backfill_window
-    else:
-        earliest_backfill_time = datetime.datetime.min.replace(tzinfo=datetime.timezone.utc)
+    def get_earliest_backfill_time() -> datetime.datetime:
+        now = timezone.utcnow()
+        if max_days is not None:
+            max_backfill_window = datetime.timedelta(days=max_days)
+            return now - max_backfill_window
+        return datetime.datetime.min.replace(tzinfo=datetime.timezone.utc)
 
 
     def get_extra_tags_for_baseunit(base_unit: BaseUnit, session: Session) -> dict[str, str]:
@@ -1058,6 +1058,7 @@ def backfill_influx(
         return tags
 
     def backfill_base_unit(session: Session, base_unit: BaseUnit) -> None:
+        earliest_backfill_time = get_earliest_backfill_time()
         sensor_query = session.query(SensorReading).filter_by(
             base_unit_id=base_unit.id, uploaded_to_influx=False,
         ).filter(SensorReading.timestamp >= earliest_backfill_time)
@@ -1145,6 +1146,7 @@ def backfill_influx(
         )
 
     def backfill_statuses[T: BaseUnitStatus | BaseUnitUsageStatus](session: Session, model_cls: type[T]) -> None:
+        earliest_backfill_time = get_earliest_backfill_time()
         statuses = session.query(model_cls).filter_by(
             uploaded_to_influx=False
         ).filter(model_cls.timestamp >= earliest_backfill_time)
@@ -1183,6 +1185,7 @@ def backfill_influx(
         )
 
     def backfill_power_statuses(session: Session) -> None:
+        earliest_backfill_time = get_earliest_backfill_time()
         power_statuses = session.query(PowerManagementStatus).filter_by(
             uploaded_to_influx=False
         ).filter(PowerManagementStatus.timestamp >= earliest_backfill_time)
