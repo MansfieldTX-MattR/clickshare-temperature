@@ -1005,7 +1005,7 @@ def fetch_readings_bulk(
 @click_extra.option(
     "--max-points-per-batch",
     type=click.IntRange(min=1),
-    default=1000,
+    default=5000,
     required=False,
     help="The maximum number of points to write to InfluxDB in a single batch",
     show_default=True,
@@ -1014,7 +1014,7 @@ def fetch_readings_bulk(
 def backfill_influx(
     ctx_obj: CLIDbContext,
     max_days: int | None = None,
-    max_points_per_batch: int = 1000
+    max_points_per_batch: int = 5000
 ) -> None:
     """Backfill all existing statuses in the database to InfluxDB."""
     from ..influxdb import (
