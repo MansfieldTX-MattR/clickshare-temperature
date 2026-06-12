@@ -1029,7 +1029,7 @@ def backfill_influx(
         offset = 0
         while True:
             chunk = query.offset(offset).limit(chunk_size)
-            if chunk.count() == 0:
+            if chunk.first() is None:
                 break
             yield chunk
             offset += chunk_size
