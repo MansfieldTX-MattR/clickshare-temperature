@@ -11,7 +11,7 @@ from pathlib import Path
 from sqlalchemy.orm import Session
 
 
-from .types import FullySerializedModelTD, RelationshipNaturalKey
+from .types import FullySerializedModelTD, RelationshipNaturalKey, RelationshipNaturalKeyTD
 from .base import Base
 from .models import (
     MODEL_CLASSES,
@@ -89,11 +89,12 @@ def deserialize_all(
             item_copy = item.copy()
             item_copy["data"] = item_copy["data"].copy()
             for key, value in item["data"].items():
-                if isinstance(value, dict) and RelationshipNaturalKey.is_relationship_natural_key(value):
-                    if isinstance(value["related_model_key"], list):
+                if RelationshipNaturalKey.is_relationship_natural_key(value):
+                    rel_key_data: RelationshipNaturalKeyTD = {**value}
+                    if isinstance(rel_key_data["related_model_key"], list):
                         # Convert lists back to tuples for immutability, if needed
-                        value["related_model_key"] = tuple(value["related_model_key"])
-                    rel_key = RelationshipNaturalKey.deserialize(value)
+                        rel_key_data["related_model_key"] = tuple(rel_key_data["related_model_key"])
+                    rel_key = RelationshipNaturalKey.deserialize(rel_key_data)
                     item_copy["data"][key] = rel_key
             processed_items.append(item_copy)
         processed_data[model_key] = processed_items
