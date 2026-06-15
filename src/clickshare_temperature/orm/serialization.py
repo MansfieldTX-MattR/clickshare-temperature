@@ -22,6 +22,9 @@ from .models import (
 SERIALIZATION_VERSION: Literal["1.0"] = "1.0"
 """The current version of the serialization format"""
 
+DESERIALIZATION_VERSIONS = ("1.0",)
+"""All versions of the serialization format that are supported for deserialization"""
+
 
 type SerializationFormatV0 = list[FullySerializedModelTD]
 """The original (version 0) format for serialization
@@ -164,9 +167,11 @@ def _deserialize_from_json(json_str: str) -> SerializationFormatV1:
                 model_data[model_table_name] = []
             model_data[model_table_name].append(item)
         data = SerializationFormatV1(
-            version="1.0",
+            version=SERIALIZATION_VERSION,
             data=model_data
         )
+    elif data.get("version") not in DESERIALIZATION_VERSIONS:
+        raise ValueError(f"Unsupported serialization version: {data.get('version')}")
     return data
 
 
