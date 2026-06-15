@@ -4,7 +4,7 @@
 # used to iterate over the models and their fields are dynamic and cannot be easily
 # expressed with the parameters for `.types.FullySerializedModelTD`.
 from __future__ import annotations
-from typing import Iterator
+from typing import Iterator, Sequence, Literal, TypedDict, Mapping
 import json
 from pathlib import Path
 
@@ -16,7 +16,38 @@ from .base import Base
 from .models import (
     MODEL_CLASSES,
     ModelInstance,
+    ModelTableName,
 )
+
+
+SERIALIZATION_VERSION: Literal["1.0"] = "1.0"
+"""The current version of the serialization format"""
+
+
+type SerializationFormatV0 = list[FullySerializedModelTD]
+"""The original (version 0) format for serialization
+
+This was a flat list of fully serialized model data.
+"""
+
+class SerializationFormatV1(TypedDict):
+    """Version 1.0 of the serialization format
+
+    This format is a dictionary with a version string and a mapping of model table
+    names to lists of fully serialized model data for that model.
+    """
+    version: Literal["1.0"]
+    """Version of the serialization format"""
+    data: Mapping[ModelTableName, Sequence[FullySerializedModelTD]]
+    """A mapping of model table names to lists of fully serialized model data for that model"""
+
+
+type DeSerializationFormat = SerializationFormatV0 | SerializationFormatV1
+"""Union type for the possible formats that may be encountered during deserialization
+
+This includes both the original flat list format (version 0) and newer
+structured format(s), beginning with version 1.0.
+"""
 
 
 def serialize_all(session: Session) -> Iterator[FullySerializedModelTD]:
