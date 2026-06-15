@@ -111,12 +111,13 @@ def deserialize_all(
         if max_iterations is not None and num_iterations >= max_iterations:
             break
         num_iterations += 1
-        progress = False
+        iteration_progress = False
 
         # MODEL_CLASSES is ordered in a way that should minimize the number of
         # iterations needed to resolve all dependencies, so we iterate over it
         # rather than arbitrary order of the models in the data
         for model_cls in MODEL_CLASSES:
+            model_progress = False
             model_table_name = model_cls.__tablename__
             if model_table_name not in incomplete:
                 continue
@@ -130,15 +131,17 @@ def deserialize_all(
                     session.add(obj)
                     items.remove(item)
                     num_incomplete -= 1
-                    progress = True
+                    model_progress = True
+                    iteration_progress = True
                 elif obj is not None:
                     items.remove(item)
                     num_incomplete -= 1
-                    progress = True
-            if progress:
+                    model_progress = True
+                    iteration_progress = True
+            if model_progress:
                 session.commit()
-            elif num_incomplete > 0:
-                raise ValueError("Could not deserialize all data, likely due to missing related models.")
+        if not iteration_progress and num_incomplete > 0:
+            raise ValueError("Could not deserialize all data, likely due to missing related models.")
     return incomplete
 
 
