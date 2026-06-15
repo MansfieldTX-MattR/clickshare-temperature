@@ -2,6 +2,7 @@ import pytest
 from typing import Callable, NamedTuple
 import datetime
 from pathlib import Path
+import json
 
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import OperationalError, IntegrityError
@@ -21,6 +22,9 @@ from clickshare_temperature.orm import (
     SensorReading as SensorReadingModel,
 )
 from clickshare_temperature.orm.serialization import (
+    SERIALIZATION_VERSION,
+    SerializationFormatV0,
+    SerializationFormatV1,
     serialize_database,
     deserialize_database,
 )
@@ -783,6 +787,55 @@ def test_database_deserialization(
 
     src_data = fully_populated_db_data
     deserialize_database(db_session, serialized_db_json)
+    check_fully_populated_db_data(src_data, db_session)
+
+
+def test_database_deserialization_legacy_list_format(
+    fully_populated_db_data: FullyPopulatedDBData,
+    db_session: Session,
+    tmp_path: Path,
+) -> None:
+    """Test that the deserialization can handle the legacy list format where
+    all models are in a single list without grouping by model type
+    """
+    # Phase 1: Serialize the database with data, then reset the engine to simulate a fresh start
+    _populate_db_with_data(db_session, fully_populated_db_data)
+    db_session.commit()
+    serialized_db_json = serialize_database(db_session)
+    serialized_db_data: SerializationFormatV1 = json.loads(serialized_db_json)
+    assert isinstance(serialized_db_data, dict)
+    assert serialized_db_data['version'] == SERIALIZATION_VERSION
+
+    # Create a legacy list format by flattening the data into a single list of dicts
+    legacy_list_format: SerializationFormatV0 = []
+    for model_list in serialized_db_data["data"].values():
+        legacy_list_format.extend(model_list)
+    legacy_db_json = json.dumps(legacy_list_format)
+
+    db_session.close()
+    _reset_engine()
+
+    # Phase 2: Initialize a new database and deserialize the data into it,
+    # then verify the data was correctly deserialized
+    db_file = tmp_path / "deserialized.db"
+    assert not db_file.exists()
+    new_uri = f"sqlite:///{db_file}"
+    set_engine_uri(new_uri)
+    assert str(get_engine_uri()) == str(new_uri)
+    init_db()
+    assert db_file.exists()
+    new_db_session = get_session()
+
+    assert new_db_session is not db_session
+    db_session = new_db_session
+
+    # Sanity check that the new database is empty before deserialization
+    assert db_session.query(BaseUnitModel).count() == 0
+    assert db_session.query(BaseUnitStatusModel).count() == 0
+    assert db_session.query(SensorReadingModel).count() == 0
+
+    src_data = fully_populated_db_data
+    deserialize_database(db_session, legacy_db_json)
     check_fully_populated_db_data(src_data, db_session)
 
 
