@@ -250,7 +250,7 @@ def test_orm_deserialization(
         """
         nonlocal current_db_session
         current_db_session = teardown_and_create_new_db_session(
-            populated_db_session,
+            current_db_session,
             tmp_path,
             exist_ok=True,
         )
