@@ -38,7 +38,7 @@ def generate_sensor_readings(
     start_time: datetime.datetime = datetime.datetime(2024, 1, 1, 0, 0, 0, tzinfo=datetime.timezone.utc),
     interval: datetime.timedelta = datetime.timedelta(minutes=1),
 ) -> Iterator[SensorReadingData]:
-    """Generate a series of sensor readings for a given base unit and sensor types.
+    """Generate a series of sensor readings for a given base unit and sensor types
     """
     for i in range(num_readings):
         timestamp = start_time + i * interval
@@ -54,7 +54,7 @@ def generate_sensor_readings(
 def generate_base_unit_data(
     num_units: int,
 ) -> list[BaseUnitInfo]:
-    """Generate a list of BaseUnitInfo objects for testing.
+    """Generate a list of BaseUnitInfo objects for testing
     """
     return [
         BaseUnitInfo(
@@ -69,7 +69,7 @@ def generate_base_unit_data(
 
 @pytest.fixture
 def base_unit_data() -> list[BaseUnitInfo]:
-    """Fixture to generate a list of 5 BaseUnitInfo objects for testing.
+    """Fixture to generate a list of 5 BaseUnitInfo objects for testing
     """
     return generate_base_unit_data(num_units=5)
 
@@ -78,7 +78,7 @@ def base_unit_data() -> list[BaseUnitInfo]:
 def sensor_readings(
     base_unit_data: list[BaseUnitInfo]
 ) -> dict[BaseUnitInfo, dict[SensorType, list[SensorReadingData]]]:
-    """Fixture to generate a dictionary of sensor readings for each base unit and sensor type.
+    """Fixture to generate a dictionary of sensor readings for each base unit and sensor type
 
     For each base unit, 100 sensor readings will be generated for each of the
     following sensor types:
@@ -137,7 +137,7 @@ def teardown_and_create_new_db_session(
     exist_ok: bool = False,
 ) -> Session:
     """Close the current session, reset the engine, create a new database file,
-    and return a new session connected to it.
+    and return a new session connected to it
     """
     db_session.close()
     _reset_engine()
@@ -169,7 +169,7 @@ def teardown_and_check_deserialization(
     exist_ok: bool = False,
 ) -> None:
     """Tear down and create a new database session, deserialize and verify
-    the new database contents.
+    the new database contents
     """
     new_db_session = teardown_and_create_new_db_session(
         db_session,
@@ -186,7 +186,7 @@ def check_deserialized_database(
     session: Session,
     expected_data: dict[BaseUnitInfo, dict[SensorType, list[SensorReadingData]]],
 ) -> None:
-    """Check that the deserialized database contains the expected data.
+    """Check that the deserialized database contains the expected data
     """
     for base_unit_info, expected_readings in expected_data.items():
         base_unit = session.query(models.BaseUnit).filter_by(
@@ -236,7 +236,7 @@ def test_orm_deserialization(
     populated_db_session: Session,
     sensor_readings: dict[BaseUnitInfo, dict[SensorType, list[SensorReadingData]]],
 ) -> None:
-    """Benchmark the deserialization of a JSON string into the database.
+    """Benchmark the deserialization of a JSON string into the database
 
     Since a new database session must be used for each benchmark iteration,
     `benchmark.pedantic` must be used for the setup function.
@@ -277,7 +277,7 @@ def test_orm_deserialization_already_populated(
 ) -> None:
     """Benchmark the deserialization of a JSON string into a database that already
     contains data, which should result in all deserialized objects being detected as existing and
-    no new objects being created.
+    no new objects being created
     """
     json_str = serialize_database(populated_db_session)
 
