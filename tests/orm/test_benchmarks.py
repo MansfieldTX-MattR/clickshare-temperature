@@ -43,7 +43,7 @@ def generate_sensor_readings(
     for i in range(num_readings):
         timestamp = start_time + i * interval
         for sensor_type in sensor_types:
-            value = 20.0 + i * 0.1  #
+            value = 20.0 + i * 0.1
             yield SensorReadingData(
                 sensor=sensor_type,
                 value=value,
