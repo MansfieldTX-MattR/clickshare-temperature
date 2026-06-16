@@ -287,3 +287,68 @@ def test_orm_deserialization_already_populated(
     benchmark(target)
 
     check_deserialized_database(populated_db_session, sensor_readings)
+
+
+@pytest.mark.benchmark(group="serialization")
+def test_orm_deserialization_half_populated(
+    benchmark: BenchmarkFixture,
+    populated_db_session: Session,
+    sensor_readings: dict[BaseUnitInfo, dict[SensorType, list[SensorReadingData]]],
+    tmp_path: Path,
+) -> None:
+    """Benchmark the deserialization of a JSON string into a database that already
+    contains data
+
+    This simulates the common use case of deserializing data into an existing database
+    that may already contain some of the data being deserialized. In this case, half
+    of the sensor readings are removed before deserialization.
+    """
+    json_str = serialize_database(populated_db_session)
+
+    current_db_session: Session | None = None
+
+    def setup() -> None:
+        """Tear down and recreate the database with half of the sensor readings
+        removed before each benchmark iteration
+        """
+        nonlocal current_db_session
+        if current_db_session is None:
+            session_to_close = populated_db_session
+        else:
+            session_to_close = current_db_session
+        current_db_session = teardown_and_create_new_db_session(
+            session_to_close,
+            tmp_path,
+            exist_ok=True,
+        )
+        deserialize_database(current_db_session, json_str)
+
+        # Remove half of the sensor readings from the freshly-populated database
+        num_readings = current_db_session.query(models.SensorReading).count()
+        num_removed = 0
+        for base_unit_info, _ in sensor_readings.items():
+            base_unit = current_db_session.query(models.BaseUnit).filter_by(
+                hostname=base_unit_info.hostname,
+            ).one()
+            num_to_remove = len(base_unit.sensor_readings) // 2
+            for reading in base_unit.sensor_readings[:num_to_remove]:
+                current_db_session.delete(reading)
+                num_removed += 1
+        current_db_session.commit()
+        num_readings_expected = num_readings - num_removed
+        assert current_db_session.query(models.SensorReading).count() == num_readings_expected
+
+
+    def target() -> None:
+        assert current_db_session is not None
+        deserialize_database(current_db_session, json_str)
+
+    benchmark.pedantic(
+        target,
+        setup=setup,
+        rounds=5,
+        iterations=1,
+    )
+
+    assert current_db_session is not None
+    check_deserialized_database(current_db_session, sensor_readings)
