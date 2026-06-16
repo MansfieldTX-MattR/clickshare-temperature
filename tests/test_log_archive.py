@@ -10,7 +10,7 @@ from clickshare_temperature.temperature_history import (
 from clickshare_temperature.types import BaseUnitInfo
 
 if TYPE_CHECKING:
-    from log_data_helpers import LogEntryTestCase
+    from .log_data_helpers import LogEntryTestCase
 
 
 

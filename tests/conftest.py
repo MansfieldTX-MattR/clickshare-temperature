@@ -13,7 +13,7 @@ from clickshare_temperature.types import (
 )
 from clickshare_temperature.temperature_history import TemperatureHistory, SensorReading
 
-from log_data_helpers import (
+from .log_data_helpers import (
     LOG_ARCHIVE_FILE,
     LOG_ARCHIVE_EXPECTED_FILES,
     LOG_ENTRY_TEST_CASES,

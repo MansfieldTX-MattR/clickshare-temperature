@@ -39,7 +39,7 @@ from clickshare_temperature.types import (
     SensorType,
 )
 
-from conftest import _reset_engine
+from .conftest import _reset_engine
 
 type WithTimeStamp[T] = tuple[T, datetime.datetime]
 

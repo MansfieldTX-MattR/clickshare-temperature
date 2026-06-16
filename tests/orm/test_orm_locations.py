@@ -20,7 +20,7 @@ from clickshare_temperature.orm.serialization import (
 from clickshare_temperature.orm.types import LocationSiblingType
 from clickshare_temperature.types import BaseUnitInfo
 
-from conftest import _reset_engine
+from .conftest import _reset_engine
 
 type PathList = tuple[str, ...]
 type LocationTypeName = Literal["building", "floor", "room"]
