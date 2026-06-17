@@ -933,13 +933,8 @@ class BaseUnit(Base[BaseUnitNaturalKey, _BaseUnitSerializeTD]):
         readings = [
             r.to_data() for r in sensor_query.all()
         ]
-        base_unit = BaseUnitInfo(
-            ip_address=self.ip_address,
-            hostname=self.hostname,
-            room_name=self.room_name,
-        )
         return TemperatureHistoryData(
-            base_unit=base_unit,
+            base_unit=self.to_data(),
             readings=readings,
         )
 
@@ -1471,11 +1466,7 @@ class BaseUnitStatus(Base[BaseUnitStatusNaturalKey, _BaseUnitStatusSerializeTD])
         """Convert this instance to a :class:`.types.BaseUnitStatus` instance
         """
         return BaseUnitStatusData(
-            base_unit=BaseUnitInfo(
-                ip_address=self.base_unit.ip_address,
-                hostname=self.base_unit.hostname,
-                room_name=self.base_unit.room_name,
-            ),
+            base_unit=self.base_unit.to_data(),
             current_uptime=self.current_uptime_timedelta,
             total_uptime=datetime.timedelta(seconds=self.total_uptime),
             error_code=self.error_code,
@@ -1588,11 +1579,7 @@ class BaseUnitUsageStatus(Base[BaseUnitUsageStatusNaturalKey, _BaseUnitUsageStat
         """Convert this instance to a :class:`.types.BaseUnitUsageStatus` instance
         """
         return BaseUnitUsageStatusData(
-            base_unit=BaseUnitInfo(
-                ip_address=self.base_unit.ip_address,
-                hostname=self.base_unit.hostname,
-                room_name=self.base_unit.room_name,
-            ),
+            base_unit=self.base_unit.to_data(),
             in_use=self.in_use,
             sharing=self.sharing,
         )
