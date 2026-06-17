@@ -629,49 +629,42 @@ class BaseUnit(Base[BaseUnitNaturalKey, _BaseUnitSerializeTD]):
     """The :class:`Location` for this BaseUnit, or None if no location is assigned"""
 
     identity: Mapped[BaseUnitIdentity] = relationship(
-        "BaseUnitIdentity",
         uselist=False,
         back_populates="base_unit",
     )
     """The :class:`BaseUnitIdentity` associated with this BaseUnit"""
 
     power_management_settings: Mapped[PowerManagementSettings] = relationship(
-        "PowerManagementSettings",
         uselist=False,
         back_populates="base_unit",
     )
     """The :class:`PowerManagementSettings` associated with this BaseUnit"""
 
     online_statuses: Mapped[list[BaseUnitOnlineStatus]] = relationship(
-        "BaseUnitOnlineStatus",
         back_populates="base_unit",
         cascade="all, delete-orphan",
     )
     """The list of :class:`BaseUnitOnlineStatus` entries associated with this BaseUnit"""
 
     power_management_statuses: Mapped[list[PowerManagementStatus]] = relationship(
-        "PowerManagementStatus",
         back_populates="base_unit",
         cascade="all, delete-orphan",
     )
     """The list of :class:`PowerManagementStatus` entries associated with this BaseUnit"""
 
     statuses: Mapped[list[BaseUnitStatus]] = relationship(
-        "BaseUnitStatus",
         back_populates="base_unit",
         cascade="all, delete-orphan",
     )
     """The list of :class:`BaseUnitStatus` entries associated with this BaseUnit"""
 
     usage_statuses: Mapped[list[BaseUnitUsageStatus]] = relationship(
-        "BaseUnitUsageStatus",
         back_populates="base_unit",
         cascade="all, delete-orphan",
     )
     """The list of :class:`BaseUnitUsageStatus` entries associated with this BaseUnit"""
 
     sensor_readings: Mapped[list[SensorReading]] = relationship(
-        "SensorReading",
         back_populates="base_unit",
         cascade="all, delete-orphan",
     )
@@ -982,7 +975,8 @@ class BaseUnitOnlineStatus(Base[BaseUnitOnlineStatusNaturalKey, _BaseUnitOnlineS
     """
     base_unit_id: Mapped[int] = mapped_column(ForeignKey("base_units.id"), nullable=False)
 
-    base_unit: Mapped[BaseUnit] = relationship("BaseUnit", back_populates="online_statuses")
+    base_unit: Mapped[BaseUnit] = relationship(back_populates="online_statuses")
+    """The :class:`BaseUnit` that this instance is associated with"""
 
     @property
     def natural_key(self) -> BaseUnitOnlineStatusNaturalKey:
@@ -1147,7 +1141,8 @@ class PowerManagementSettings(Base[PowerManagementSettingsNaturalKey, _PowerMana
     mode: Mapped[PowerMode]
     standby_timeout: Mapped[int|None]
 
-    base_unit: Mapped[BaseUnit] = relationship("BaseUnit", back_populates="power_management_settings")
+    base_unit: Mapped[BaseUnit] = relationship(back_populates="power_management_settings")
+    """The :class:`BaseUnit` that this instance is associated with"""
 
 
     @property
@@ -1241,7 +1236,8 @@ class PowerManagementStatus(Base[PowerManagementStatusNaturalKey, _PowerManageme
     power_mode_status: Mapped[PowerModeStatus]
     uploaded_to_influx: Mapped[bool] = mapped_column(nullable=False, default=False)
 
-    base_unit: Mapped[BaseUnit] = relationship("BaseUnit", back_populates="power_management_statuses")
+    base_unit: Mapped[BaseUnit] = relationship(back_populates="power_management_statuses")
+    """The :class:`BaseUnit` that this instance is associated with"""
 
     @property
     def natural_key(self) -> PowerManagementStatusNaturalKey:
@@ -1333,7 +1329,8 @@ class BaseUnitStatus(Base[BaseUnitStatusNaturalKey, _BaseUnitStatusSerializeTD])
     sharing: Mapped[bool] = mapped_column(nullable=False)
     uploaded_to_influx: Mapped[bool] = mapped_column(nullable=False, default=False)
 
-    base_unit: Mapped[BaseUnit] = relationship(BaseUnit, back_populates="statuses")
+    base_unit: Mapped[BaseUnit] = relationship(back_populates="statuses")
+    """The :class:`BaseUnit` that this instance is associated with"""
 
     @property
     def natural_key(self) -> BaseUnitStatusNaturalKey:
@@ -1460,7 +1457,8 @@ class BaseUnitUsageStatus(Base[BaseUnitUsageStatusNaturalKey, _BaseUnitUsageStat
     sharing: Mapped[bool] = mapped_column(nullable=False)
     uploaded_to_influx: Mapped[bool] = mapped_column(nullable=False, default=False)
 
-    base_unit: Mapped[BaseUnit] = relationship(BaseUnit, back_populates="usage_statuses")
+    base_unit: Mapped[BaseUnit] = relationship(back_populates="usage_statuses")
+    """The :class:`BaseUnit` that this instance is associated with"""
 
     @property
     def natural_key(self) -> BaseUnitUsageStatusNaturalKey:
@@ -1573,7 +1571,8 @@ class SensorReading(Base[SensorReadingNaturalKey, _SensorReadingSerializeTD]):
     value: Mapped[float] = mapped_column(nullable=False)
     uploaded_to_influx: Mapped[bool] = mapped_column(nullable=False, default=False)
 
-    base_unit: Mapped[BaseUnit] = relationship(BaseUnit, back_populates="sensor_readings")
+    base_unit: Mapped[BaseUnit] = relationship(back_populates="sensor_readings")
+    """The :class:`BaseUnit` that this instance is associated with"""
 
     # Add a unique constraint to prevent duplicate readings for the same base unit, timestamp, and sensor type
     __table_args__ = (
