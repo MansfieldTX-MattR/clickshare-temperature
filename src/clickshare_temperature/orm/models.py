@@ -629,49 +629,42 @@ class BaseUnit(Base[BaseUnitNaturalKey, _BaseUnitSerializeTD]):
     """The :class:`Location` for this BaseUnit, or None if no location is assigned"""
 
     identity: Mapped[BaseUnitIdentity] = relationship(
-        "BaseUnitIdentity",
         uselist=False,
         back_populates="base_unit",
     )
     """The :class:`BaseUnitIdentity` associated with this BaseUnit"""
 
     power_management_settings: Mapped[PowerManagementSettings] = relationship(
-        "PowerManagementSettings",
         uselist=False,
         back_populates="base_unit",
     )
     """The :class:`PowerManagementSettings` associated with this BaseUnit"""
 
     online_statuses: Mapped[list[BaseUnitOnlineStatus]] = relationship(
-        "BaseUnitOnlineStatus",
         back_populates="base_unit",
         cascade="all, delete-orphan",
     )
     """The list of :class:`BaseUnitOnlineStatus` entries associated with this BaseUnit"""
 
     power_management_statuses: Mapped[list[PowerManagementStatus]] = relationship(
-        "PowerManagementStatus",
         back_populates="base_unit",
         cascade="all, delete-orphan",
     )
     """The list of :class:`PowerManagementStatus` entries associated with this BaseUnit"""
 
     statuses: Mapped[list[BaseUnitStatus]] = relationship(
-        "BaseUnitStatus",
         back_populates="base_unit",
         cascade="all, delete-orphan",
     )
     """The list of :class:`BaseUnitStatus` entries associated with this BaseUnit"""
 
     usage_statuses: Mapped[list[BaseUnitUsageStatus]] = relationship(
-        "BaseUnitUsageStatus",
         back_populates="base_unit",
         cascade="all, delete-orphan",
     )
     """The list of :class:`BaseUnitUsageStatus` entries associated with this BaseUnit"""
 
     sensor_readings: Mapped[list[SensorReading]] = relationship(
-        "SensorReading",
         back_populates="base_unit",
         cascade="all, delete-orphan",
     )
@@ -940,13 +933,8 @@ class BaseUnit(Base[BaseUnitNaturalKey, _BaseUnitSerializeTD]):
         readings = [
             r.to_data() for r in sensor_query.all()
         ]
-        base_unit = BaseUnitInfo(
-            ip_address=self.ip_address,
-            hostname=self.hostname,
-            room_name=self.room_name,
-        )
         return TemperatureHistoryData(
-            base_unit=base_unit,
+            base_unit=self.to_data(),
             readings=readings,
         )
 
@@ -982,7 +970,8 @@ class BaseUnitOnlineStatus(Base[BaseUnitOnlineStatusNaturalKey, _BaseUnitOnlineS
     """
     base_unit_id: Mapped[int] = mapped_column(ForeignKey("base_units.id"), nullable=False)
 
-    base_unit: Mapped[BaseUnit] = relationship("BaseUnit", back_populates="online_statuses")
+    base_unit: Mapped[BaseUnit] = relationship(back_populates="online_statuses")
+    """The :class:`BaseUnit` that this instance is associated with"""
 
     @property
     def natural_key(self) -> BaseUnitOnlineStatusNaturalKey:
@@ -1049,12 +1038,22 @@ class BaseUnitIdentity(Base[BaseUnitIdentityNaturalKey, _BaseUnitIdentitySeriali
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     base_unit_id: Mapped[int] = mapped_column(ForeignKey("base_units.id"), unique=True, nullable=False)
     article_number: Mapped[str]
+    """Article number of the BaseUnit (e.g. "R9861622US")"""
+
     hardware_version: Mapped[str]
+    """Hardware version of the BaseUnit"""
+
     model_name: Mapped[str]
+    """Model name of the BaseUnit (e.g. "C50118")"""
+
     product_name: Mapped[str]
+    """Product name of the BaseUnit (e.g. "CX-50")"""
+
     serial_number: Mapped[str]
+    """Serial number of the BaseUnit"""
 
     base_unit: Mapped[BaseUnit] = relationship(back_populates="identity")
+    """The :class:`BaseUnit` that this instance is associated with"""
 
     @property
     def natural_key(self) -> BaseUnitIdentityNaturalKey:
@@ -1145,9 +1144,20 @@ class PowerManagementSettings(Base[PowerManagementSettingsNaturalKey, _PowerMana
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     base_unit_id: Mapped[int] = mapped_column(ForeignKey("base_units.id"), unique=True, nullable=False)
     mode: Mapped[PowerMode]
-    standby_timeout: Mapped[int|None]
+    """The power management :type:`mode <.types.PowerMode>` of the BaseUnit
 
-    base_unit: Mapped[BaseUnit] = relationship("BaseUnit", back_populates="power_management_settings")
+    This can be one of "EcoStandby", "NetworkedStandby", or "DeepStandby".
+    """
+
+    standby_timeout: Mapped[int|None]
+    """The standby timeout in minutes for the BaseUnit
+
+    The possible values are listed in :type:`.types.PowerStandbyTimeout` except
+    in the case of "Infinite" which is represented as None for this field.
+    """
+
+    base_unit: Mapped[BaseUnit] = relationship(back_populates="power_management_settings")
+    """The :class:`BaseUnit` that this instance is associated with"""
 
 
     @property
@@ -1238,10 +1248,19 @@ class PowerManagementStatus(Base[PowerManagementStatusNaturalKey, _PowerManageme
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     base_unit_id: Mapped[int] = mapped_column(ForeignKey("base_units.id"), nullable=False)
     timestamp: Mapped[datetime.datetime] = mapped_column(index=True, nullable=False)
-    power_mode_status: Mapped[PowerModeStatus]
-    uploaded_to_influx: Mapped[bool] = mapped_column(nullable=False, default=False)
+    """Timestamp of the power management status entry"""
 
-    base_unit: Mapped[BaseUnit] = relationship("BaseUnit", back_populates="power_management_statuses")
+    power_mode_status: Mapped[PowerModeStatus]
+    """The :type:`power mode status <.types.PowerModeStatus>` of the BaseUnit
+
+    This can be one of "On" or "Standby".
+    """
+
+    uploaded_to_influx: Mapped[bool] = mapped_column(nullable=False, default=False)
+    """Whether this status entry has been uploaded to InfluxDB"""
+
+    base_unit: Mapped[BaseUnit] = relationship(back_populates="power_management_statuses")
+    """The :class:`BaseUnit` that this instance is associated with"""
 
     @property
     def natural_key(self) -> PowerManagementStatusNaturalKey:
@@ -1323,17 +1342,38 @@ class BaseUnitStatus(Base[BaseUnitStatusNaturalKey, _BaseUnitStatusSerializeTD])
     )
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     timestamp: Mapped[datetime.datetime] = mapped_column(index=True, nullable=False)
+    """Timestamp of the status entry"""
+
     base_unit_id: Mapped[int] = mapped_column(ForeignKey("base_units.id"), nullable=False)
     current_uptime: Mapped[int] = mapped_column(nullable=False)
-    total_uptime: Mapped[int] = mapped_column(nullable=False)
-    error_code: Mapped[BaseUnitStatusErrorCode] = mapped_column(nullable=False)
-    error_message: Mapped[str] = mapped_column(nullable=True)
-    first_used: Mapped[datetime.datetime] = mapped_column(nullable=False)
-    in_use: Mapped[bool] = mapped_column(nullable=False)
-    sharing: Mapped[bool] = mapped_column(nullable=False)
-    uploaded_to_influx: Mapped[bool] = mapped_column(nullable=False, default=False)
+    """The current uptime of the BaseUnit in seconds"""
 
-    base_unit: Mapped[BaseUnit] = relationship(BaseUnit, back_populates="statuses")
+    total_uptime: Mapped[int] = mapped_column(nullable=False)
+    """The total uptime of the BaseUnit in seconds"""
+
+    error_code: Mapped[BaseUnitStatusErrorCode] = mapped_column(nullable=False)
+    """The :type:`error code <.types.BaseUnitStatusErrorCode>` of the BaseUnit status entry
+
+    This can be one of "Ok", "Warning", or "Error".
+    """
+
+    error_message: Mapped[str] = mapped_column(nullable=True)
+    """The error message of the BaseUnit status entry, if any"""
+
+    first_used: Mapped[datetime.datetime] = mapped_column(nullable=False)
+    """The timestamp of when the BaseUnit was first used"""
+
+    in_use: Mapped[bool] = mapped_column(nullable=False)
+    """Whether the BaseUnit is in use at the time of this status entry"""
+
+    sharing: Mapped[bool] = mapped_column(nullable=False)
+    """Whether the BaseUnit is sharing at the time of this status entry"""
+
+    uploaded_to_influx: Mapped[bool] = mapped_column(nullable=False, default=False)
+    """Whether this status entry has been uploaded to InfluxDB"""
+
+    base_unit: Mapped[BaseUnit] = relationship(back_populates="statuses")
+    """The :class:`BaseUnit` that this instance is associated with"""
 
     @property
     def natural_key(self) -> BaseUnitStatusNaturalKey:
@@ -1426,11 +1466,7 @@ class BaseUnitStatus(Base[BaseUnitStatusNaturalKey, _BaseUnitStatusSerializeTD])
         """Convert this instance to a :class:`.types.BaseUnitStatus` instance
         """
         return BaseUnitStatusData(
-            base_unit=BaseUnitInfo(
-                ip_address=self.base_unit.ip_address,
-                hostname=self.base_unit.hostname,
-                room_name=self.base_unit.room_name,
-            ),
+            base_unit=self.base_unit.to_data(),
             current_uptime=self.current_uptime_timedelta,
             total_uptime=datetime.timedelta(seconds=self.total_uptime),
             error_code=self.error_code,
@@ -1455,12 +1491,20 @@ class BaseUnitUsageStatus(Base[BaseUnitUsageStatusNaturalKey, _BaseUnitUsageStat
     __tablename__ = "base_unit_usage_statuses"
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     timestamp: Mapped[datetime.datetime] = mapped_column(index=True, nullable=False)
+    """Timestamp of the usage status entry"""
+
     base_unit_id: Mapped[int] = mapped_column(ForeignKey("base_units.id"), nullable=False)
     in_use: Mapped[bool] = mapped_column(nullable=False)
-    sharing: Mapped[bool] = mapped_column(nullable=False)
-    uploaded_to_influx: Mapped[bool] = mapped_column(nullable=False, default=False)
+    """Whether the BaseUnit is in use at the time of this usage status entry"""
 
-    base_unit: Mapped[BaseUnit] = relationship(BaseUnit, back_populates="usage_statuses")
+    sharing: Mapped[bool] = mapped_column(nullable=False)
+    """Whether the BaseUnit is sharing at the time of this usage status entry"""
+
+    uploaded_to_influx: Mapped[bool] = mapped_column(nullable=False, default=False)
+    """Whether this usage status entry has been uploaded to InfluxDB"""
+
+    base_unit: Mapped[BaseUnit] = relationship(back_populates="usage_statuses")
+    """The :class:`BaseUnit` that this instance is associated with"""
 
     @property
     def natural_key(self) -> BaseUnitUsageStatusNaturalKey:
@@ -1535,11 +1579,7 @@ class BaseUnitUsageStatus(Base[BaseUnitUsageStatusNaturalKey, _BaseUnitUsageStat
         """Convert this instance to a :class:`.types.BaseUnitUsageStatus` instance
         """
         return BaseUnitUsageStatusData(
-            base_unit=BaseUnitInfo(
-                ip_address=self.base_unit.ip_address,
-                hostname=self.base_unit.hostname,
-                room_name=self.base_unit.room_name,
-            ),
+            base_unit=self.base_unit.to_data(),
             in_use=self.in_use,
             sharing=self.sharing,
         )
@@ -1569,11 +1609,21 @@ class SensorReading(Base[SensorReadingNaturalKey, _SensorReadingSerializeTD]):
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     base_unit_id: Mapped[int] = mapped_column(ForeignKey("base_units.id"), nullable=False)
     timestamp: Mapped[datetime.datetime] = mapped_column(index=True, nullable=False)
-    sensor_type: Mapped[SensorType] = mapped_column(index=True, nullable=False)
-    value: Mapped[float] = mapped_column(nullable=False)
-    uploaded_to_influx: Mapped[bool] = mapped_column(nullable=False, default=False)
+    """Timestamp of the sensor reading"""
 
-    base_unit: Mapped[BaseUnit] = relationship(BaseUnit, back_populates="sensor_readings")
+    sensor_type: Mapped[SensorType] = mapped_column(index=True, nullable=False)
+    """The :type:`sensor type <.types.SensorType>` of the sensor reading
+
+    This can be one of "CPU", "WLAN0", "WLAN1", or "CPU_FAN".
+    """
+    value: Mapped[float] = mapped_column(nullable=False)
+    """The value of the sensor reading"""
+
+    uploaded_to_influx: Mapped[bool] = mapped_column(nullable=False, default=False)
+    """Whether this sensor reading has been uploaded to InfluxDB"""
+
+    base_unit: Mapped[BaseUnit] = relationship(back_populates="sensor_readings")
+    """The :class:`BaseUnit` that this instance is associated with"""
 
     # Add a unique constraint to prevent duplicate readings for the same base unit, timestamp, and sensor type
     __table_args__ = (
