@@ -10,7 +10,7 @@ from sqlalchemy.orm import (
     DeclarativeBase,
 )
 from sqlalchemy import inspect
-from sqlalchemy import String, Float
+from sqlalchemy import String, Float, Select
 from sqlalchemy_utc import UtcDateTime
 
 from ..types import LogLevel, SensorType
@@ -40,9 +40,16 @@ class Base[NaturalKeyType, SerializeType: (_BaseModelSerializeTD[Any])](Declarat
 
     @classmethod
     @abstractmethod
+    def select_by_natural_key(cls, key: NaturalKeyType) -> Select[tuple[Self]]:
+        """Get a select statement to retrieve a model instance by its natural key
+        """
+        raise NotImplementedError
+
+    @classmethod
     def get_by_natural_key(cls, session: Session, key: NaturalKeyType) -> Self|None:
         """Get a model instance by its natural key"""
-        raise NotImplementedError
+        stmt = cls.select_by_natural_key(key)
+        return session.execute(stmt).scalar_one_or_none()
 
     @abstractmethod
     def serialize(self) -> SerializeType:

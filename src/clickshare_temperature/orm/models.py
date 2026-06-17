@@ -13,7 +13,7 @@ from sqlalchemy.orm import (
     aliased,
 )
 from sqlalchemy.sql.expression import Select
-from sqlalchemy import ForeignKey, Index, func, select, tuple_
+from sqlalchemy import ForeignKey, Index, func, select, tuple_, null
 from sqlalchemy.schema import UniqueConstraint
 
 from .base import Base
@@ -163,11 +163,10 @@ class LocationType(Base[LocationTypeNaturalKey, _LocationTypeSerializeTD]):
         return self.name
 
     @classmethod
-    def get_by_natural_key(cls, session: Session, key: LocationTypeNaturalKey) -> Self|None:
-        """Get the instance of this model from the given natural key
-        If no instance exists, ``None`` is returned.
+    def select_by_natural_key(cls, key: LocationTypeNaturalKey) -> Select[tuple[Self]]:
+        """Get a select statement to retrieve a model instance by its natural key
         """
-        return session.query(cls).filter_by(name=key).one_or_none()
+        return select(cls).filter_by(name=key)
 
     def serialize(self) -> _LocationTypeSerializeTD:
         """Serialize this instance to a dictionary for JSON serialization"""
@@ -535,12 +534,36 @@ class Location(Base[LocationNaturalKey, _LocationSerializeTD]):
         return self.pathlist
 
     @classmethod
-    def get_by_natural_key(cls, session: Session, key: LocationNaturalKey) -> Self|None:
-        """Get the instance of this model from the given natural key
-
-        If no instance exists, ``None`` is returned.
+    def select_by_natural_key(cls, key: LocationNaturalKey) -> Select[tuple[Self]]:
+        """Get a select statement to retrieve a model instance by its natural key
         """
-        return cls.get_by_pathlist(*key, session=session)
+        path_iter = iter(key)
+        root_name = next(path_iter, None)
+        if root_name is None:
+            raise ValueError("Location natural key cannot be an empty pathlist")
+        first_child_name = next(path_iter, None)
+        if first_child_name is None:
+            # Easy case: we can filter by name and parent_location_id is null
+            # to get the root location with the given name
+            return select(cls).filter_by(name=root_name, parent_location_id=None)
+
+        # We can only filter by the full pathlist, so we have to create a complex query
+        # that traverses the location hierarchy and filters by each level of the pathlist.
+        root_alias = aliased(cls, name="loc_0", flat=True)
+        stmt = select(root_alias).filter(
+            root_alias.name == root_name,
+            root_alias.parent_location_id.is_(null()),
+        )
+        parent_alias = root_alias
+        current_alias = root_alias
+        for i, name in enumerate((first_child_name, *path_iter), start=1):
+            current_alias = aliased(cls, name=f"loc_{i}", flat=True)
+            stmt = stmt.join(
+                current_alias,
+                current_alias.parent_location_id == parent_alias.id,
+            ).filter(current_alias.name == name)
+            parent_alias = current_alias
+        return stmt.with_only_columns(current_alias)
 
     def serialize(self) -> _LocationSerializeTD:
         """Serialize this instance to a dictionary for JSON serialization
@@ -675,12 +698,10 @@ class BaseUnit(Base[BaseUnitNaturalKey, _BaseUnitSerializeTD]):
         return self.hostname
 
     @classmethod
-    def get_by_natural_key(cls, session: Session, key: BaseUnitNaturalKey) -> Self|None:
-        """Get the instance of this model from the given natural key
-
-        If no instance exists, ``None`` is returned.
+    def select_by_natural_key(cls, key: BaseUnitNaturalKey) -> Select[tuple[Self]]:
+        """Get a select statement to retrieve a model instance by its natural key
         """
-        return session.query(cls).filter_by(hostname=key).one_or_none()
+        return select(cls).filter_by(hostname=key)
 
     def serialize(self) -> _BaseUnitSerializeTD:
         """Serialize this instance to a dictionary for JSON serialization
@@ -973,18 +994,14 @@ class BaseUnitOnlineStatus(Base[BaseUnitOnlineStatusNaturalKey, _BaseUnitOnlineS
         )
 
     @classmethod
-    def get_by_natural_key(cls, session: Session, key: BaseUnitOnlineStatusNaturalKey) -> Self|None:
-        """Get the instance of this model from the given natural key
-
-        If no instance exists, ``None`` is returned.
+    def select_by_natural_key(cls, key: BaseUnitOnlineStatusNaturalKey) -> Select[tuple[Self]]:
+        """Get a select statement to retrieve a model instance by its natural key
         """
         base_unit_hostname, pk = key
-        base_unit = BaseUnit.get_by_natural_key(session, base_unit_hostname)
-        if base_unit is None:
-            return None
-        return session.query(cls).filter_by(
-            base_unit_id=base_unit.id, id=pk
-        ).one_or_none()
+        return select(cls).join(BaseUnit).filter(
+            BaseUnit.hostname == base_unit_hostname,
+            cls.id == pk,
+        )
 
     def serialize(self) -> _BaseUnitOnlineStatusSerializeTD:
         """Serialize this instance to a dictionary for JSON serialization
@@ -1046,17 +1063,12 @@ class BaseUnitIdentity(Base[BaseUnitIdentityNaturalKey, _BaseUnitIdentitySeriali
         return self.base_unit.natural_key
 
     @classmethod
-    def get_by_natural_key(cls, session: Session, key: BaseUnitIdentityNaturalKey) -> Self|None:
-        """Get the instance of this model from the given natural key
-
-        If no instance exists, ``None`` is returned.
+    def select_by_natural_key(cls, key: BaseUnitIdentityNaturalKey) -> Select[tuple[Self]]:
+        """Get a select statement to retrieve a model instance by its natural key
         """
-        base_unit = BaseUnit.get_by_natural_key(session, key)
-        if base_unit is None:
-            return None
-        return session.query(cls).filter_by(
-            base_unit_id=base_unit.id
-        ).one_or_none()
+        return select(cls).join(BaseUnit).filter(
+            BaseUnit.hostname == key,
+        )
 
     def serialize(self) -> _BaseUnitIdentitySerializeTD:
         """Serialize this instance to a dictionary for JSON serialization
@@ -1145,15 +1157,12 @@ class PowerManagementSettings(Base[PowerManagementSettingsNaturalKey, _PowerMana
         return self.base_unit.natural_key
 
     @classmethod
-    def get_by_natural_key(cls, session: Session, key: PowerManagementSettingsNaturalKey) -> Self|None:
-        """Get the instance of this model from the given natural key
-
-        If no instance exists, ``None`` is returned.
+    def select_by_natural_key(cls, key: PowerManagementSettingsNaturalKey) -> Select[tuple[Self]]:
+        """Get a select statement to retrieve a model instance by its natural key
         """
-        base_unit = BaseUnit.get_by_natural_key(session, key)
-        if base_unit is None:
-            return None
-        return session.query(cls).filter_by(base_unit_id=base_unit.id).one_or_none()
+        return select(cls).join(BaseUnit).filter(
+            BaseUnit.hostname == key,
+        )
 
     def serialize(self) -> _PowerManagementSettingsSerializeTD:
         """Serialize this instance to a dictionary for JSON serialization
@@ -1244,16 +1253,14 @@ class PowerManagementStatus(Base[PowerManagementStatusNaturalKey, _PowerManageme
         )
 
     @classmethod
-    def get_by_natural_key(cls, session: Session, key: PowerManagementStatusNaturalKey) -> Self|None:
-        """Get the instance of this model from the given natural key
-
-        If no instance exists, ``None`` is returned.
+    def select_by_natural_key(cls, key: PowerManagementStatusNaturalKey) -> Select[tuple[Self]]:
+        """Get a select statement to retrieve a model instance by its natural key
         """
         base_unit_key, pk = key
-        base_unit = BaseUnit.get_by_natural_key(session, base_unit_key)
-        if base_unit is None:
-            return None
-        return session.query(cls).filter_by(base_unit_id=base_unit.id, id=pk).one_or_none()
+        return select(cls).join(BaseUnit).filter(
+            BaseUnit.hostname == base_unit_key,
+            cls.id == pk,
+        )
 
     def serialize(self) -> _PowerManagementStatusSerializeTD:
         """Serialize this instance to a dictionary for JSON serialization
@@ -1379,18 +1386,14 @@ class BaseUnitStatus(Base[BaseUnitStatusNaturalKey, _BaseUnitStatusSerializeTD])
         )
 
     @classmethod
-    def get_by_natural_key(cls, session: Session, key: BaseUnitStatusNaturalKey) -> Self|None:
-        """Get the instance of this model from the given natural key
-
-        If no instance exists, ``None`` is returned.
+    def select_by_natural_key(cls, key: BaseUnitStatusNaturalKey) -> Select[tuple[Self]]:
+        """Get a select statement to retrieve a model instance by its natural key
         """
         base_unit_hostname, pk = key
-        base_unit = BaseUnit.get_by_natural_key(session, base_unit_hostname)
-        if base_unit is None:
-            return None
-        return session.query(cls).filter_by(
-            base_unit_id=base_unit.id, id=pk
-        ).one_or_none()
+        return select(cls).join(BaseUnit).filter(
+            BaseUnit.hostname == base_unit_hostname,
+            cls.id == pk,
+        )
 
     @property
     def current_uptime_timedelta(self) -> datetime.timedelta:
@@ -1469,18 +1472,14 @@ class BaseUnitUsageStatus(Base[BaseUnitUsageStatusNaturalKey, _BaseUnitUsageStat
         )
 
     @classmethod
-    def get_by_natural_key(cls, session: Session, key: BaseUnitUsageStatusNaturalKey) -> Self | None:
-        """Get the instance of this model from the given natural key
-
-        If no instance exists, ``None`` is returned.
+    def select_by_natural_key(cls, key: BaseUnitUsageStatusNaturalKey) -> Select[tuple[Self]]:
+        """Get a select statement to retrieve a model instance by its natural key
         """
         base_unit_hostname, pk = key
-        base_unit = BaseUnit.get_by_natural_key(session, base_unit_hostname)
-        if base_unit is None:
-            return None
-        return session.query(cls).filter_by(
-            base_unit_id=base_unit.id, id=pk
-        ).one_or_none()
+        return select(cls).join(BaseUnit).filter(
+            BaseUnit.hostname == base_unit_hostname,
+            cls.id == pk,
+        )
 
     def serialize(self) -> _BaseUnitUsageStatusSerializeTD:
         """Serialize this instance to a dictionary for JSON serialization
@@ -1623,25 +1622,14 @@ class SensorReading(Base[SensorReadingNaturalKey, _SensorReadingSerializeTD]):
         )
 
     @classmethod
-    def get_by_natural_key(
-        cls,
-        session: Session,
-        key: SensorReadingNaturalKey,
-    ) -> SensorReading|None:
-        """Get an instance of this model from the given natural key
-
-        If no instance exists, ``None`` is returned.
+    def select_by_natural_key(cls, key: SensorReadingNaturalKey) -> Select[tuple[Self]]:
+        """Get a select statement to retrieve a model instance by its natural key
         """
         base_unit_hostname, pk = key
-        base_unit = BaseUnit.get_by_natural_key(session, base_unit_hostname)
-        if base_unit is None:
-            return None
-        obj = session.query(SensorReading).filter_by(
-            base_unit_id=base_unit.id, id=pk
-        ).one_or_none()
-        if obj is not None:
-            assert obj.id == pk, f"Expected to find SensorReading with ID {pk}, but found {obj.id}"
-        return obj
+        return select(cls).join(BaseUnit).filter(
+            BaseUnit.hostname == base_unit_hostname,
+            cls.id == pk,
+        )
 
     @classmethod
     def filter_by_sensor_type(cls, session: Session, sensor_type: SensorType) -> Query[SensorReading]:
