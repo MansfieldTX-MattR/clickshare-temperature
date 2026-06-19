@@ -1,8 +1,12 @@
+from __future__ import annotations
+from typing import Iterator, TYPE_CHECKING
 import datetime
 from zoneinfo import ZoneInfo
 from pathlib import Path
 
 import pytest
+if TYPE_CHECKING:
+    from pytest_httpserver import HTTPServer
 
 from clickshare_temperature.types import (
     BaseUnitInfo,
@@ -20,11 +24,51 @@ from .log_data_helpers import (
     LOG_ENTRY_SENSOR_READINGS,
     LogEntryTestCase,
 )
+import clickshare_temperature.influxdb
 
 
 type WithTimeStamp[T] = tuple[T, datetime.datetime]
 
 
+@pytest.fixture
+def influxdb_http_server(httpserver: HTTPServer) -> HTTPServer:
+    """Fixture that provides a mock HTTP server for simulating InfluxDB API responses
+    """
+    endpoint = "/api/v2/write"
+    httpserver.expect_request(endpoint, method="POST").respond_with_data("", status=204)
+    return httpserver
+
+
+@pytest.fixture
+def influxdb_client_env_mock(
+    influxdb_http_server: HTTPServer,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Monkeypatch the InfluxDB client to use the mock HTTP server's URL
+    influx_url = f"http://{influxdb_http_server.host}:{influxdb_http_server.port}"
+    influx_token = "test-token"
+    influx_org = "test-org"
+    influx_bucket = "test-bucket"
+    monkeypatch.setenv("INFLUX_URL", influx_url)
+    monkeypatch.setenv("INFLUX_TOKEN", influx_token)
+    monkeypatch.setenv("INFLUX_ORG", influx_org)
+    monkeypatch.setenv("INFLUX_BUCKET", influx_bucket)
+    monkeypatch.setattr(clickshare_temperature.influxdb, "INFLUX_URL", influx_url)
+    monkeypatch.setattr(clickshare_temperature.influxdb, "INFLUX_TOKEN", influx_token)
+    monkeypatch.setattr(clickshare_temperature.influxdb, "INFLUX_ORG", influx_org)
+    monkeypatch.setattr(clickshare_temperature.influxdb, "INFLUX_BUCKET", influx_bucket)
+
+
+@pytest.fixture
+def influxdb_client(
+    influxdb_http_server: HTTPServer,
+    influxdb_client_env_mock: None,
+) -> Iterator[clickshare_temperature.influxdb.InfluxDBClient3Wrapper]:
+    """Fixture that monkeypatches the InfluxDB client to use the mock HTTP server
+    """
+    client = clickshare_temperature.influxdb.InfluxDBClient3Wrapper()
+    with client:
+        yield client
 
 
 @pytest.fixture(params=LOG_ENTRY_TEST_CASES)
