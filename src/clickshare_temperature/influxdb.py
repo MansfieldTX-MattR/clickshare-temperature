@@ -2,6 +2,7 @@ from __future__ import annotations
 from typing import (
     Literal, NamedTuple, Sequence, TypedDict, Iterable, Self, Callable, overload
 )
+from types import MappingProxyType, TracebackType
 import datetime
 import os
 from pathlib import Path
@@ -59,6 +60,73 @@ class InfluxDBRateLimitExceededError(Exception):
             return f"{base_message} (retry after {self.retry_after} seconds at {self.retry_after_datetime.isoformat()})"
         else:
             return base_message
+
+
+
+class InfluxDBClient3Wrapper:
+    """Wrapper around InfluxDBClient3 to provide a context manager for automatic cleanup
+
+    This wrapper allows the client to be reused across multiple calls while
+    ensuring that the client is properly closed when no longer needed.
+
+
+    >>> client = InfluxDBClient3Wrapper()
+    >>> with client as c:
+    ...     # Use the client c for writing points, querying, etc.
+    ...     with client as c2:
+    ...         # The same client instance is returned, and the acquire count is incremented
+    ...         assert c is c2
+    ...     # After exiting the inner context, the acquire count is decremented
+    ...     # but the client is not closed because the outer context is still active
+    ...     assert client.is_open
+    ... # After exiting the outer context, the acquire count reaches zero and the client is closed
+    >>> assert not client.is_open
+
+    """
+    def __init__(self) -> None:
+        self.client = InfluxDBClient3(host=INFLUX_URL, token=INFLUX_TOKEN, org=INFLUX_ORG)
+        self._acquire_count = 0
+        self._is_closed = False
+
+    @property
+    def is_open(self) -> bool:
+        """Whether the client is currently open
+        """
+        return not self._is_closed
+
+    def open(self) -> InfluxDBClient3:
+        """Acquire the InfluxDB client for use
+
+        This increments the internal acquire count, allowing the client to be
+        reused across multiple calls.
+        """
+        if self._is_closed:
+            raise RuntimeError("Cannot acquire InfluxDB client: client is already closed")
+        self._acquire_count += 1
+        return self.client
+
+    def close(self) -> None:
+        """Release the InfluxDB client
+
+        This decrements the internal acquire count, and if the count reaches
+        zero, the client is closed.
+        """
+        self._acquire_count -= 1
+        if self._acquire_count <= 0 and not self._is_closed:
+            self._is_closed = True
+            self.client.close()
+
+    def __enter__(self) -> InfluxDBClient3:
+        return self.open()
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: TracebackType | None
+    ) -> None:
+        self.close()
+
 
 
 type TagsCallback[**P] = Callable[P, dict[str, str]]
@@ -244,15 +312,26 @@ class LastReadingsInfo(NamedTuple):
         )
 
 
-def upload_points(points: Sequence[Point]) -> None:
+def upload_points(
+    points: Sequence[Point],
+    client_wrapper: InfluxDBClient3Wrapper | None = None
+) -> None:
     """Upload a sequence of InfluxDB `Point` objects to InfluxDB
+
+    Arguments:
+        points: A sequence of :class:`Point` objects to upload
+        client_wrapper: An optional :class:`InfluxDBClient3Wrapper` instance to
+            use for uploading the points. If not provided, one will be created.
 
     Raises:
         InfluxDBRateLimitExceededError: If the InfluxDB API returns a 429 Too Many Requests error
             indicating that the rate limit has been exceeded
         InfluxDBApiException: If the InfluxDB API returns any other error
     """
-    with InfluxDBClient3(host=INFLUX_URL, token=INFLUX_TOKEN, org=INFLUX_ORG) as client:
+    if client_wrapper is None:
+        client_wrapper = InfluxDBClient3Wrapper()
+
+    with client_wrapper as client:
         try:
             client.write(database=INFLUX_BUCKET, record=points)
         except InfluxDBApiException as e:
@@ -294,6 +373,7 @@ def backfill_readings(
     temperature_history: TemperatureHistory,
     ignore_last_readings_info: bool = ...,
     tags_callback: TagsCallback[[BaseUnitInfo, SensorReading[SensorType]]] | None = ...,
+    client_wrapper: InfluxDBClient3Wrapper | None = ...,
     return_points: Literal[False] = ...,
 ) -> int: ...
 @overload
@@ -302,6 +382,7 @@ def backfill_readings(
     temperature_history: TemperatureHistory,
     ignore_last_readings_info: bool = ...,
     tags_callback: TagsCallback[[BaseUnitInfo, SensorReading[SensorType]]] | None = ...,
+    client_wrapper: InfluxDBClient3Wrapper | None = ...,
     return_points: Literal[True] = ...,
 ) -> tuple[int, Sequence[Point]]: ...
 def backfill_readings(
@@ -309,6 +390,7 @@ def backfill_readings(
     temperature_history: TemperatureHistory,
     ignore_last_readings_info: bool = False,
     tags_callback: TagsCallback[[BaseUnitInfo, SensorReading[SensorType]]] | None = None,
+    client_wrapper: InfluxDBClient3Wrapper | None = None,
     return_points: bool = False,
 ) -> int | tuple[int, Sequence[Point]]:
     """Backfill sensor readings for a BaseUnit to InfluxDB, returning the number of points uploaded
@@ -323,6 +405,8 @@ def backfill_readings(
         tags_callback: An optional callback function that takes a
             :class:`.BaseUnitInfo` and a :class:`.SensorReading` and returns a
             dictionary of extra tags to include on the uploaded points.
+        client_wrapper: An optional :class:`InfluxDBClient3Wrapper` instance
+            to use for uploading the points. If not provided, one will be created.
 
     Returns:
         If return_points is False (the default)
@@ -349,7 +433,7 @@ def backfill_readings(
         extra_tags = tags_callback(base_unit, r) if tags_callback is not None else {}
         p = reading_to_point(base_unit, r, **extra_tags)
         points.append(p)
-    upload_points(points)
+    upload_points(points, client_wrapper=client_wrapper)
     if not ignore_last_readings_info:
         last_readings_info.save()
     if return_points:
@@ -364,7 +448,8 @@ def baseunit_online_status_to_point(
     timestamp: datetime.datetime,
     **extra_tags: str
 ) -> Point:
-    """Convert a :class:`.BaseUnitInfo` and online status to an InfluxDB `Point` for uploading to InfluxDB
+    """Convert a :class:`.BaseUnitInfo` and online status to a :class:`Point`
+    for uploading to InfluxDB
     """
     assert timestamp.tzinfo is not None, "Timestamp must be timezone-aware"
     p = Point("baseunit_online_status") \
@@ -383,7 +468,7 @@ def baseunit_status_to_point(
     **extra_tags: str
 ) -> Point:
     """Convert a :class:`.BaseUnitStatus` or :class:`.BaseUnitUsageStatus`
-    object to an InfluxDB `Point` object for uploading to InfluxDB
+    object to a :class:`Point` for uploading to InfluxDB
     """
     assert timestamp.tzinfo is not None, "Timestamp must be timezone-aware"
     m_name = "baseunit_status" if isinstance(status, BaseUnitStatus) else "baseunit_usage_status"
@@ -410,7 +495,7 @@ def power_management_status_to_point(
     timestamp: datetime.datetime,
     **extra_tags: str
 ) -> Point:
-    """Convert a :class:`.PowerManagementStatus` object to an InfluxDB `Point` object for
+    """Convert a :class:`.PowerManagementStatus` object to :class:`Point` for
     uploading to InfluxDB
     """
     assert timestamp.tzinfo is not None, "Timestamp must be timezone-aware"
@@ -426,49 +511,85 @@ def power_management_status_to_point(
 
 def upload_baseunit_online_statuses(
     statuses: Iterable[tuple[BaseUnitInfo, bool, datetime.datetime]],
-    tags_callback: TagsCallback[[BaseUnitInfo]] | None = None
-) -> None:
+    tags_callback: TagsCallback[[BaseUnitInfo]] | None = None,
+    client_wrapper: InfluxDBClient3Wrapper | None = None,
+) -> list[Point]:
     """Upload one or more :class:`.BaseUnitInfo` and online status tuples to InfluxDB
 
     Arguments:
         statuses: An iterable of tuples containing a :class:`.BaseUnitInfo`, a boolean
             indicating online status, and a timestamp for when the status was recorded
+        tags_callback: An optional callback function that takes a :class:`.BaseUnitInfo`
+            and returns a dictionary of extra tags to include on the uploaded points.
+        client_wrapper: An optional :class:`InfluxDBClient3Wrapper` instance to use
+            for uploading the points. If not provided, one will be created.
+
+    Returns:
+        A list of the :class:`Point` objects that were uploaded
     """
     points = []
     for base_unit, online, timestamp in statuses:
         extra_tags = tags_callback(base_unit) if tags_callback is not None else {}
         p = baseunit_online_status_to_point(base_unit, online, timestamp, **extra_tags)
         points.append(p)
-    upload_points(points)
+    upload_points(points, client_wrapper=client_wrapper)
+    return points
 
 
 def upload_baseunit_status(
     statuses: Iterable[tuple[BaseUnitStatus|BaseUnitUsageStatus, datetime.datetime]],
-    tags_callback: TagsCallback[[BaseUnitStatus|BaseUnitUsageStatus]] | None = None
-) -> None:
+    tags_callback: TagsCallback[[BaseUnitStatus|BaseUnitUsageStatus]] | None = None,
+    client_wrapper: InfluxDBClient3Wrapper | None = None
+) -> list[Point]:
     """Upload one or more :class:`.BaseUnitStatus` or :class:`.BaseUnitUsageStatus`
     objects to InfluxDB
+
+    Arguments:
+        statuses: An iterable of tuples containing a :class:`.BaseUnitStatus` or
+            :class:`.BaseUnitUsageStatus` object and the timestamp for that status
+        tags_callback: An optional callback function that takes a :class:`.BaseUnitStatus`
+            or :class:`.BaseUnitUsageStatus` object and returns a dictionary of
+            extra tags to include on the uploaded points.
+        client_wrapper: An optional :class:`InfluxDBClient3Wrapper` instance to use
+            for uploading the points. If not provided, one will be created.
+
+    Returns:
+        A list of the :class:`Point` objects that were uploaded
     """
     points = []
     for status, timestamp in statuses:
         extra_tags = tags_callback(status) if tags_callback is not None else {}
         p = baseunit_status_to_point(status, timestamp, **extra_tags)
         points.append(p)
-    upload_points(points)
+    upload_points(points, client_wrapper=client_wrapper)
+    return points
 
 
 def upload_power_management_statuses(
     statuses: Iterable[tuple[BaseUnitInfo, PowerModeStatus, datetime.datetime]],
-    tags_callback: TagsCallback[[BaseUnitInfo]] | None = None
-) -> None:
+    tags_callback: TagsCallback[[BaseUnitInfo]] | None = None,
+    client_wrapper: InfluxDBClient3Wrapper | None = None
+) -> list[Point]:
     """Upload one or more :class:`.PowerManagementStatus` objects to InfluxDB
+
+    Arguments:
+        statuses: An iterable of tuples containing a :class:`.BaseUnitInfo`,
+            a :type:`.PowerModeStatus`, and the timestamp for that status
+        tags_callback: An optional callback function that takes a :class:`.BaseUnitInfo`
+            and returns a dictionary of extra tags to include on the uploaded points.
+        client_wrapper: An optional :class:`InfluxDBClient3Wrapper` instance to use
+            for uploading the points. If not provided, one will be created.
+
+    Returns:
+        A list of the :class:`Point` objects that were uploaded
     """
     points = []
     for base_unit, mode, timestamp in statuses:
         extra_tags = tags_callback(base_unit) if tags_callback is not None else {}
         p = power_management_status_to_point(base_unit, mode, timestamp, **extra_tags)
         points.append(p)
-    upload_points(points)
+    upload_points(points, client_wrapper=client_wrapper)
+    return points
 
 
 def load_temperature_history_from_file(filepath: Path) -> TemperatureHistory:
