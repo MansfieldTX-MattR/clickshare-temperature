@@ -162,7 +162,7 @@ def check_usage_status_points(
 
 def check_sensor_reading_points(
     points: Sequence[Point],
-    readings: Sequence[SensorReading],
+    readings: Sequence[SensorReading[SensorType]],
     base_unit: BaseUnitInfo,
     extra_tags: Sequence[dict[str, str]]|None = None,
 ) -> None:

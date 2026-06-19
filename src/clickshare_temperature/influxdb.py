@@ -111,6 +111,11 @@ class InfluxDBClient3Wrapper:
         This decrements the internal acquire count, and if the count reaches
         zero, the client is closed.
         """
+    def close(self) -> None:
+        """Release the InfluxDB client
+        """
+        if self._acquire_count == 0:
+            raise RuntimeError("Cannot release InfluxDB client: no active acquisition")
         self._acquire_count -= 1
         if self._acquire_count <= 0 and not self._is_closed:
             self._is_closed = True
