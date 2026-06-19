@@ -1,5 +1,7 @@
 from __future__ import annotations
-from typing import NamedTuple, Sequence, TypedDict, Iterable, Self, Callable
+from typing import (
+    Literal, NamedTuple, Sequence, TypedDict, Iterable, Self, Callable, overload
+)
 import datetime
 import os
 from pathlib import Path
@@ -244,13 +246,50 @@ def reading_to_point(
     return p
 
 
+@overload
+def backfill_readings(
+    base_unit: BaseUnitInfo,
+    temperature_history: TemperatureHistory,
+    ignore_last_readings_info: bool = ...,
+    tags_callback: TagsCallback[[BaseUnitInfo, SensorReading[SensorType]]] | None = ...,
+    return_points: Literal[False] = ...,
+) -> int: ...
+@overload
+def backfill_readings(
+    base_unit: BaseUnitInfo,
+    temperature_history: TemperatureHistory,
+    ignore_last_readings_info: bool = ...,
+    tags_callback: TagsCallback[[BaseUnitInfo, SensorReading[SensorType]]] | None = ...,
+    return_points: Literal[True] = ...,
+) -> tuple[int, Sequence[Point]]: ...
 def backfill_readings(
     base_unit: BaseUnitInfo,
     temperature_history: TemperatureHistory,
     ignore_last_readings_info: bool = False,
-    tags_callback: TagsCallback[[BaseUnitInfo, SensorReading[SensorType]]] | None = None
-) -> int:
+    tags_callback: TagsCallback[[BaseUnitInfo, SensorReading[SensorType]]] | None = None,
+    return_points: bool = False,
+) -> int | tuple[int, Sequence[Point]]:
     """Backfill sensor readings for a BaseUnit to InfluxDB, returning the number of points uploaded
+
+    Arguments:
+        base_unit: The :class:`.BaseUnitInfo` for the BaseUnit these readings are for
+        temperature_history: A :class:`.TemperatureHistory` containing the readings to backfill
+        ignore_last_readings_info: If True, the last readings info will be ignored
+            and all readings in the temperature history will be uploaded.
+            If False (the default), the last readings info will be used to determine
+            which readings to upload based on their timestamps.
+        tags_callback: An optional callback function that takes a
+            :class:`.BaseUnitInfo` and a :class:`.SensorReading` and returns a
+            dictionary of extra tags to include on the uploaded points.
+
+    Returns:
+        If return_points is False (the default)
+            :type:`int`: The number of points uploaded.
+
+        If return_points is True
+            :type:`tuple[int, Sequence[Point]]`: A tuple containing the number
+            of points uploaded and a sequence of the uploaded points.
+
     """
     if ignore_last_readings_info:
         readings_to_upload = list(temperature_history.readings)
@@ -271,7 +310,10 @@ def backfill_readings(
     upload_points(points)
     if not ignore_last_readings_info:
         last_readings_info.save()
-    return len(points)
+    if return_points:
+        return len(points), points
+    else:
+        return len(points)
 
 
 def baseunit_online_status_to_point(
