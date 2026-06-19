@@ -9,7 +9,7 @@ import json
 
 from urllib3 import HTTPHeaderDict
 from dotenv import load_dotenv
-from influxdb_client_3 import InfluxDBClient3, Point, WritePrecision
+from influxdb_client_3 import InfluxDBClient3, Point as _Point, WritePrecision
 from influxdb_client_3.write_client.rest import ApiException as InfluxDBApiException
 import click
 
@@ -65,6 +65,48 @@ type TagsCallback[**P] = Callable[P, dict[str, str]]
 """Type for a callback function that generates extra tags for InfluxDB points
 based on the input parameters.
 """
+
+type InfluxFieldType = int|float|str|bool|datetime.datetime
+"""Type for valid InfluxDB field values, which can be integers, floats, strings,
+booleans, or datetimes
+"""
+
+type InfluxTimeType = datetime.datetime|datetime.timedelta|int|float
+"""Type for valid InfluxDB time values, which can be datetimes, timedeltas,
+or numeric timestamps
+"""
+
+
+class Point(_Point):
+    """Subclass of :class:`influxdb_client_3.write_client.client.write.point.Point`
+
+    This exposes properties that are otherwise "hidden" in the original class
+    (single-underscore attributes).
+    """
+
+    @property
+    def name(self) -> str:
+        """The measurement name of this point
+        """
+        return self._name
+
+    @property
+    def tags(self) -> MappingProxyType[str, str]:
+        """The tags of this point as a read-only mapping
+        """
+        return MappingProxyType(self._tags)
+
+    @property
+    def fields(self) -> MappingProxyType[str, InfluxFieldType]:
+        """The fields of this point as a read-only mapping
+        """
+        return MappingProxyType(self._fields)
+
+    def get_time(self) -> InfluxTimeType | None:
+        """The time of this point, or None if no time is set
+        """
+        return self._time
+
 
 
 class LastReadingInfoTD(TypedDict):
