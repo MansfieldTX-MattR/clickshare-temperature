@@ -14,6 +14,7 @@ from clickshare_temperature.types import (
     BaseUnitUsageStatus,
     PowerManagementInfo,
     PowerModeStatus,
+    SensorType,
 )
 from clickshare_temperature.temperature_history import (
     TemperatureHistory,
