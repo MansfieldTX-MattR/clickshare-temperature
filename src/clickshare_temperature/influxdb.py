@@ -429,6 +429,8 @@ def backfill_readings(
                 readings_to_upload.append(r)
                 last_readings_info = last_readings_info.update_with_reading(base_unit.hostname, r)
     if not len(readings_to_upload):
+        if return_points:
+            return 0, []
         return 0
     points = []
     for r in readings_to_upload:
