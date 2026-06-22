@@ -5,6 +5,7 @@ from pathlib import Path
 
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
+from click_extra.testing import ExtraCliRunner
 
 from clickshare_temperature.orm import (
     set_engine_uri,
@@ -17,6 +18,7 @@ from clickshare_temperature.orm.serialization import (
     serialize_database,
     deserialize_database,
 )
+from clickshare_temperature.orm.cli import list_locations
 from clickshare_temperature.orm.types import LocationSiblingType
 from clickshare_temperature.types import BaseUnitInfo
 
@@ -791,3 +793,56 @@ def test_location_model_serialization(
         for base_unit_model, base_unit_info in zip(base_units, expected_infos, strict=True):
             assert base_unit_model.to_data() == base_unit_info
             assert base_unit_model.location is deserialized_location
+
+
+def test_location_table_display(
+    db_session: Session,
+    extra_runner: ExtraCliRunner,
+) -> None:
+    root_a = models.Location(name="Root A")
+    root_b = models.Location(name="Root B")
+    root_c = models.Location(name="Root C")
+    floor_1a = models.Location(name="Floor 1", parent_location=root_a)
+    floor_2a = models.Location(name="Floor 2", parent_location=root_a)
+    floor_1b = models.Location(name="Floor 1", parent_location=root_b)
+    floor_2b = models.Location(name="Floor 2", parent_location=root_b)
+    db_session.add_all([root_a, root_b, root_c, floor_1a, floor_2a, floor_1b, floor_2b])
+    db_session.commit()
+
+    result = extra_runner.invoke(list_locations, ["-k", "name"])
+    assert result.exit_code == 0
+    expected_output = """\
+╭─────────────────╮
+│ Name            │
+├─────────────────┤
+│ ┌── Root A      │
+│ │   ├── Floor 1 │
+│ │   └── Floor 2 │
+│ ├── Root B      │
+│ │   ├── Floor 1 │
+│ │   └── Floor 2 │
+│ └── Root C      │
+╰─────────────────╯
+"""
+    assert result.output == expected_output
+
+    # now delete root_c and check that the display updates accordingly
+    db_session.delete(root_c)
+    db_session.commit()
+
+    expected_output_after_deletion = """\
+╭─────────────────╮
+│ Name            │
+├─────────────────┤
+│ ┌── Root A      │
+│ │   ├── Floor 1 │
+│ │   └── Floor 2 │
+│ └── Root B      │
+│     ├── Floor 1 │
+│     └── Floor 2 │
+╰─────────────────╯
+"""
+
+    result_after_deletion = extra_runner.invoke(list_locations, ["-k", "name"])
+    assert result_after_deletion.exit_code == 0
+    assert result_after_deletion.output == expected_output_after_deletion
