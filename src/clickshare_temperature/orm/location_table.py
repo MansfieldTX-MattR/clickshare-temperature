@@ -270,5 +270,8 @@ def show_locations_table(
     for row_data in data:
         highlight = row_data.id == highlight_location_id
         table_data.append(row_data.get_table_row_items(header_keys, highlight=highlight))
-    ctx.print_table(table_data, header) # type: ignore[attr-defined]
+
+    # IMPORTANT: Use preserve_whitespace=True to ensure the indentation of the
+    # location names is preserved in the table output
+    ctx.print_table(table_data, header, preserve_whitespace=True) # type: ignore[attr-defined]
     return data
