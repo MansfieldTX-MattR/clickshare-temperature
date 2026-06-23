@@ -269,33 +269,6 @@ class LogEntry(NamedTuple):
         """Deserialize a LogEntry from a log line string."""
         return cls.from_log_line(line)
 
-    def __gt__(self, other: LogEntry|datetime.datetime) -> bool: # type: ignore[override]
-        if isinstance(other, LogEntry):
-            return self.timestamp > other.timestamp
-        if isinstance(other, datetime.datetime):
-            return self.timestamp > other
-        return NotImplemented
-
-    def __lt__(self, other: LogEntry|datetime.datetime) -> bool: # type: ignore[override]
-        if isinstance(other, LogEntry):
-            return self.timestamp < other.timestamp
-        if isinstance(other, datetime.datetime):
-            return self.timestamp < other
-        return NotImplemented
-
-    def __ge__(self, other: LogEntry|datetime.datetime) -> bool: # type: ignore[override]
-        if isinstance(other, LogEntry):
-            return self.timestamp >= other.timestamp
-        if isinstance(other, datetime.datetime):
-            return self.timestamp >= other
-        return NotImplemented
-
-    def __le__(self, other: LogEntry|datetime.datetime) -> bool: # type: ignore[override]
-        if isinstance(other, LogEntry):
-            return self.timestamp <= other.timestamp
-        if isinstance(other, datetime.datetime):
-            return self.timestamp <= other
-        return NotImplemented
 
 
 class _LogArchiveSerializeTD(TypedDict):
