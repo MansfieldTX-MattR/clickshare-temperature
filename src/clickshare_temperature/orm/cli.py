@@ -317,7 +317,7 @@ def add_baseunit(ctx_obj: CLIDbContext, base_unit_ips: tuple[str, ...]) -> None:
 
 
 @baseunit_cli.command(name="list")
-@click_extra.table_format_option    # type: ignore[untyped-decorator]
+@click_extra.table_format_option
 @click_extra.pass_obj
 @click_extra.pass_context
 def list_baseunits(ctx: click_extra.Context, ctx_obj: CLIDbContext) -> None:

@@ -5,7 +5,7 @@ from pathlib import Path
 
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
-from click_extra.testing import ExtraCliRunner
+from click_extra.testing import CliRunner
 
 from clickshare_temperature.orm import (
     set_engine_uri,
@@ -797,7 +797,7 @@ def test_location_model_serialization(
 
 def test_location_table_display(
     db_session: Session,
-    extra_runner: ExtraCliRunner,
+    runner: CliRunner,
 ) -> None:
     root_a = models.Location(name="Root A")
     root_b = models.Location(name="Root B")
@@ -809,7 +809,7 @@ def test_location_table_display(
     db_session.add_all([root_a, root_b, root_c, floor_1a, floor_2a, floor_1b, floor_2b])
     db_session.commit()
 
-    result = extra_runner.invoke(list_locations, ["-k", "name"])
+    result = runner.invoke(list_locations, ["-k", "name"])
     assert result.exit_code == 0
     expected_output = """\
 ╭─────────────────╮
@@ -843,6 +843,6 @@ def test_location_table_display(
 ╰─────────────────╯
 """
 
-    result_after_deletion = extra_runner.invoke(list_locations, ["-k", "name"])
+    result_after_deletion = runner.invoke(list_locations, ["-k", "name"])
     assert result_after_deletion.exit_code == 0
     assert result_after_deletion.output == expected_output_after_deletion

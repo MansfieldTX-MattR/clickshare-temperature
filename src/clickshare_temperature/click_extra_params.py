@@ -8,7 +8,7 @@ from click_extra import (
     ColorOption,
     ThemeOption,
     ShowParamsOption,
-    ExtraVersionOption,
+    VersionOption,
 )
 
 from clickshare_temperature.types import (
@@ -25,7 +25,7 @@ def get_extra_params() -> list[click.Option]:
         ColorOption(),
         ThemeOption(),
         ShowParamsOption(),
-        ExtraVersionOption(),
+        VersionOption(),
     ]
 
 @dataclass
