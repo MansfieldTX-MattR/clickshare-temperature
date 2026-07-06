@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Literal, Callable
+from typing import Literal
 import asyncio
 from pathlib import Path
 import json
@@ -35,7 +35,7 @@ from .utils import (
 from .click_extra_params import get_extra_params, CLIRootContext
 
 
-orm_cli: None|click_extra.Group|Callable[..., None]
+orm_cli: None|click.Group
 try:
     from .orm.cli import cli as orm_cli
 except ModuleNotFoundError as exc:
@@ -44,7 +44,7 @@ except ModuleNotFoundError as exc:
     else:
         raise
 
-influxdb_cli: None|click_extra.Group|Callable[..., None]
+influxdb_cli: None|click.Group
 try:
     from .influxdb import cli as influxdb_cli
 except ImportError:
@@ -452,10 +452,8 @@ async def download(
     return history, True
 
 if orm_cli is not None:
-    assert isinstance(orm_cli, click.Command)
     cli.add_command(orm_cli)
 if influxdb_cli is not None:
-    assert isinstance(influxdb_cli, click.Command)
     cli.add_command(influxdb_cli)
 
 if __name__ == "__main__":
