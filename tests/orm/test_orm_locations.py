@@ -5,7 +5,7 @@ from pathlib import Path
 
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
-from click_extra.testing import ExtraCliRunner
+from click_extra.testing import CliRunner
 
 from clickshare_temperature.orm import (
     set_engine_uri,
