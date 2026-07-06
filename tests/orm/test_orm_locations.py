@@ -797,7 +797,7 @@ def test_location_model_serialization(
 
 def test_location_table_display(
     db_session: Session,
-    extra_runner: ExtraCliRunner,
+    extra_runner: CliRunner,
 ) -> None:
     root_a = models.Location(name="Root A")
     root_b = models.Location(name="Root B")
