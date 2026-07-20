@@ -207,7 +207,7 @@ def get_location_table_data(session: Session) -> list[LocationTableRow]:
     order of the locations in depth-first traversal of the hierarchy.
     """
     data: list[LocationTableRow] = []
-    root_locations = session.query(Location).filter_by(parent_location=None).all()
+    root_locations = Location.get_root_locations(session)
     current_index = 0
 
     def handle_location(

@@ -154,8 +154,8 @@ class LocationType(Base[LocationTypeNaturalKey, _LocationTypeSerializeTD]):
     def get_by_name(cls, name: str, session: Session, raise_if_not_found: bool = False) -> Self|None:
         """Get a LocationType by its name"""
         if raise_if_not_found:
-            return session.query(cls).filter_by(name=name).one()
-        return session.query(cls).filter_by(name=name).one_or_none()
+            return session.query(cls).where(cls.name == name).one()
+        return session.query(cls).where(cls.name == name).one_or_none()
 
     @property
     def natural_key(self) -> LocationTypeNaturalKey:
@@ -166,7 +166,7 @@ class LocationType(Base[LocationTypeNaturalKey, _LocationTypeSerializeTD]):
     def select_by_natural_key(cls, key: LocationTypeNaturalKey) -> Select[tuple[Self]]:
         """Get a select statement to retrieve a model instance by its natural key
         """
-        return select(cls).filter_by(name=key)
+        return select(cls).where(cls.name == key)
 
     def serialize(self) -> _LocationTypeSerializeTD:
         """Serialize this instance to a dictionary for JSON serialization"""
@@ -330,7 +330,7 @@ class Location(Base[LocationNaturalKey, _LocationSerializeTD]):
                 session=session,
                 raise_if_not_found=True,
             )
-        return session.query(cls).filter_by(location_type=location_type).all()
+        return session.query(cls).where(cls.location_type == location_type).all()
 
     @classmethod
     def create_from_pathlist(cls, *names: str, session: Session) -> Self:
@@ -357,9 +357,9 @@ class Location(Base[LocationNaturalKey, _LocationSerializeTD]):
             parent_location = None
             for name in names:
                 parent_id = parent_location.id if parent_location is not None else None
-                location = session.query(cls).filter_by(
-                    name=name,
-                    parent_location_id=parent_id,
+                location = session.query(cls).where(
+                    cls.name == name,
+                    cls.parent_location_id == parent_id,
                 ).one_or_none()
                 if location is None:
                     location = cls(name=name, parent_location=parent_location)
@@ -391,9 +391,9 @@ class Location(Base[LocationNaturalKey, _LocationSerializeTD]):
         parent_location = None
         for name in names:
             parent_id = parent_location.id if parent_location is not None else None
-            location = session.query(cls).filter_by(
-                name=name,
-                parent_location_id=parent_id,
+            location = session.query(cls).where(
+                cls.name == name,
+                cls.parent_location_id == parent_id,
             ).one_or_none()
             if location is None:
                 return None
@@ -405,7 +405,7 @@ class Location(Base[LocationNaturalKey, _LocationSerializeTD]):
     def get_root_locations(cls, session: Session) -> Query[Self]:
         """Get a query for all root locations (i.e. locations with no parent location)
         """
-        return session.query(cls).filter_by(parent_location_id=None)
+        return session.query(cls).where(cls.parent_location_id.is_(None))
 
     def get_sibling_type(self, session: Session) -> LocationSiblingType:
         """Get the :type:`LocationSiblingType` of this Location among its
@@ -457,7 +457,7 @@ class Location(Base[LocationNaturalKey, _LocationSerializeTD]):
         if self.parent_location is None:
             return self.get_root_locations(session)
         cls = self.__class__
-        return session.query(cls).filter_by(parent_location_id=self.parent_location_id)
+        return session.query(cls).where(cls.parent_location_id == self.parent_location_id)
 
     def get_sibling_count(self, session: Session) -> int:
         """Get the number of siblings of this Location, including itself
@@ -505,11 +505,11 @@ class Location(Base[LocationNaturalKey, _LocationSerializeTD]):
             A SQLAlchemy Query object for the BaseUnits at this Location and
                 optionally at descendant Locations
         """
-        q = session.query(BaseUnit).filter_by(location_id=self.id)
+        q = session.query(BaseUnit).where(BaseUnit.location_id == self.id)
         if include_descendants:
             descendant_locations_q = self.get_descendants_query().with_only_columns(Location.id)
             q = q.union_all(
-                session.query(BaseUnit).filter(BaseUnit.location_id.in_(descendant_locations_q))
+                session.query(BaseUnit).where(BaseUnit.location_id.in_(descendant_locations_q))
             )
         return q
 
@@ -545,7 +545,7 @@ class Location(Base[LocationNaturalKey, _LocationSerializeTD]):
         if first_child_name is None:
             # Easy case: we can filter by name and parent_location_id is null
             # to get the root location with the given name
-            return select(cls).filter_by(name=root_name, parent_location_id=None)
+            return select(cls).where(cls.name == root_name, cls.parent_location_id.is_(None))
 
         # We can only filter by the full pathlist, so we have to create a complex query
         # that traverses the location hierarchy and filters by each level of the pathlist.
@@ -694,7 +694,7 @@ class BaseUnit(Base[BaseUnitNaturalKey, _BaseUnitSerializeTD]):
     def select_by_natural_key(cls, key: BaseUnitNaturalKey) -> Select[tuple[Self]]:
         """Get a select statement to retrieve a model instance by its natural key
         """
-        return select(cls).filter_by(hostname=key)
+        return select(cls).where(cls.hostname == key)
 
     def serialize(self) -> _BaseUnitSerializeTD:
         """Serialize this instance to a dictionary for JSON serialization
@@ -784,8 +784,8 @@ class BaseUnit(Base[BaseUnitNaturalKey, _BaseUnitSerializeTD]):
         """Get the most recent :class:`BaseUnitOnlineStatus` for this BaseUnit, or None if no statuses exist
         """
         session = self._get_current_orm_session()
-        return session.query(BaseUnitOnlineStatus).filter_by(
-            base_unit_id=self.id
+        return session.query(BaseUnitOnlineStatus).where(
+            BaseUnitOnlineStatus.base_unit_id == self.id
         ).order_by(BaseUnitOnlineStatus.timestamp.desc()).first()
 
     def set_online_status(
@@ -896,10 +896,10 @@ class BaseUnit(Base[BaseUnitNaturalKey, _BaseUnitSerializeTD]):
         already exists in the database.
         """
         timestamp = timezone.ensure_aware(reading.timestamp)
-        existing_reading = session.query(SensorReading).filter_by(
-            base_unit_id=self.id,
-            timestamp=timestamp,
-            sensor_type=reading.sensor,
+        existing_reading = session.query(SensorReading).where(
+            SensorReading.base_unit_id == self.id,
+            SensorReading.timestamp == timestamp,
+            SensorReading.sensor_type == reading.sensor,
         ).one_or_none()
         return existing_reading is not None
 
@@ -911,9 +911,9 @@ class BaseUnit(Base[BaseUnitNaturalKey, _BaseUnitSerializeTD]):
     ) -> Query[SensorReading]:
         """Get sensor readings for this BaseUnit, optionally filtered by sensor type
         """
-        query = session.query(SensorReading).filter_by(base_unit_id=self.id)
+        query = session.query(SensorReading).where(SensorReading.base_unit_id == self.id)
         if sensor_type is not None:
-            query = query.filter_by(sensor_type=sensor_type)
+            query = query.where(SensorReading.sensor_type == sensor_type)
         if order_by == "desc":
             return query.order_by(SensorReading.timestamp.desc())
         elif order_by == "asc":
@@ -1685,7 +1685,7 @@ class SensorReading(Base[SensorReadingNaturalKey, _SensorReadingSerializeTD]):
     def filter_by_sensor_type(cls, session: Session, sensor_type: SensorType) -> Query[SensorReading]:
         """Get a query for SensorReadings of a specific sensor type
         """
-        return session.query(SensorReading).filter_by(sensor_type=sensor_type)
+        return session.query(SensorReading).where(SensorReading.sensor_type == sensor_type)
 
     @classmethod
     def from_data(

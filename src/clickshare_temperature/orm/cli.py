@@ -206,8 +206,8 @@ def backfill_from_files(ctx_obj: CLIDbContext, directory: Path) -> None:
         for filepath in directory.glob("*.txt"):
             click_secho(f"Processing file {filepath}...", fg="blue")
             base_unit_info = get_baseunit_from_filename(filepath)
-            base_unit = session.query(BaseUnit).filter_by(
-                hostname=base_unit_info.hostname
+            base_unit = session.query(BaseUnit).where(
+                BaseUnit.hostname == base_unit_info.hostname
             ).one_or_none()
             if base_unit is None:
                 base_unit = BaseUnit(
@@ -223,8 +223,8 @@ def backfill_from_files(ctx_obj: CLIDbContext, directory: Path) -> None:
         for filepath in directory.glob("*.txt"):
             click_secho(f"Processing file {filepath}...", fg="blue")
             base_unit_info = get_baseunit_from_filename(filepath)
-            base_unit = session.query(BaseUnit).filter_by(
-                hostname=base_unit_info.hostname
+            base_unit = session.query(BaseUnit).where(
+                BaseUnit.hostname == base_unit_info.hostname
             ).one()
             temperature_history = TemperatureHistory.deserialize_str(base_unit_info, filepath.read_text())
             num_added, num_skipped = base_unit.add_sensor_readings(temperature_history.readings, session)
@@ -273,8 +273,8 @@ def add_baseunit(ctx_obj: CLIDbContext, base_unit_ips: tuple[str, ...]) -> None:
 
     with get_db_session() as session:
         for baseunit_info in base_unit_infos:
-            base_unit = session.query(BaseUnit).filter_by(
-                hostname=baseunit_info.hostname
+            base_unit = session.query(BaseUnit).where(
+                BaseUnit.hostname == baseunit_info.hostname
             ).one_or_none()
             if base_unit is not None:
                 if base_unit.room_name != baseunit_info.room_name or base_unit.ip_address != baseunit_info.ip_address:
@@ -407,7 +407,7 @@ def add_location(
     with get_db_session() as session:
         parent_location = None
         if parent_id is not None:
-            parent_location = session.query(Location).filter_by(id=parent_id).one_or_none()
+            parent_location = session.query(Location).where(Location.id == parent_id).one_or_none()
             if parent_location is None:
                 click_secho(f"Parent location with ID {parent_id} not found, aborting", fg="red")
                 raise click.Abort()
@@ -462,7 +462,7 @@ def set_location_type(
                 raise click.Abort()
             location_id = location_row.id
 
-        location = session.query(Location).filter_by(id=location_id).one_or_none()
+        location = session.query(Location).where(Location.id == location_id).one_or_none()
         if location is None:
             click_secho(f"Location with ID {location_id} not found, aborting", fg="red")
             raise click.Abort()
@@ -483,7 +483,7 @@ def set_location_type(
 def delete_location(ctx_obj: CLIDbContext, location_id: int) -> None:
     """Delete a Location from the database. Child locations will also be deleted."""
     with get_db_session() as session:
-        location = session.query(Location).filter_by(id=location_id).one_or_none()
+        location = session.query(Location).where(Location.id == location_id).one_or_none()
         if location is None:
             click_secho(f"Location with ID {location_id} not found, aborting", fg="red")
             raise click.Abort()
@@ -542,7 +542,7 @@ def assign_baseunit_location(
         header_keys = list(header_keys) + [key for key in required_keys if key not in header_keys]
 
     with get_db_session() as session:
-        base_unit = session.query(BaseUnit).filter_by(hostname=baseunit_hostname).one_or_none()
+        base_unit = session.query(BaseUnit).where(BaseUnit.hostname == baseunit_hostname).one_or_none()
         if base_unit is None:
             click_secho(f"BaseUnit with hostname '{baseunit_hostname}' not found, aborting", fg="red")
             raise click.Abort()
@@ -571,7 +571,7 @@ def assign_baseunit_location(
                 raise click.Abort()
             location_id = location_row.id
 
-        location = session.query(Location).filter_by(id=location_id).one_or_none()
+        location = session.query(Location).where(Location.id == location_id).one_or_none()
         if location is None:
             click_secho(f"Location with ID {location_id} not found, aborting", fg="red")
             raise click.Abort()
@@ -603,7 +603,7 @@ def assign_baseunit_location(
 def unassign_baseunit_location(ctx_obj: CLIDbContext, baseunit_hostname: str) -> None:
     """Unassign the Location from a BaseUnit."""
     with get_db_session() as session:
-        base_unit = session.query(BaseUnit).filter_by(hostname=baseunit_hostname).one_or_none()
+        base_unit = session.query(BaseUnit).where(BaseUnit.hostname == baseunit_hostname).one_or_none()
         if base_unit is None:
             click_secho(f"BaseUnit with hostname '{baseunit_hostname}' not found, aborting", fg="red")
             raise click.Abort()
@@ -1059,9 +1059,10 @@ def backfill_influx(
 
     def backfill_base_unit(session: Session, base_unit: BaseUnit) -> None:
         earliest_backfill_time = get_earliest_backfill_time()
-        sensor_query = session.query(SensorReading).filter_by(
-            base_unit_id=base_unit.id, uploaded_to_influx=False,
-        ).filter(SensorReading.timestamp >= earliest_backfill_time)
+        sensor_query = session.query(SensorReading).where(
+            SensorReading.base_unit_id == base_unit.id,
+            SensorReading.uploaded_to_influx.is_(False),
+        ).where(SensorReading.timestamp >= earliest_backfill_time)
         sensor_query = sensor_query.order_by(SensorReading.timestamp.asc())
         if sensor_query.count() == 0:
             return
@@ -1130,8 +1131,8 @@ def backfill_influx(
         upload_baseunit_online_statuses(
             status_args,
             tags_callback=lambda base_unit_info: get_extra_tags_for_baseunit(
-                session.query(BaseUnit).filter_by(
-                    hostname=base_unit_info.hostname
+                session.query(BaseUnit).where(
+                    BaseUnit.hostname == base_unit_info.hostname
                 ).one(),
                 session=session,
             ),
@@ -1147,9 +1148,9 @@ def backfill_influx(
 
     def backfill_statuses[T: BaseUnitStatus | BaseUnitUsageStatus](session: Session, model_cls: type[T]) -> None:
         earliest_backfill_time = get_earliest_backfill_time()
-        statuses = session.query(model_cls).filter_by(
-            uploaded_to_influx=False
-        ).filter(model_cls.timestamp >= earliest_backfill_time)
+        statuses = session.query(model_cls).where(
+            model_cls.uploaded_to_influx.is_(False)
+        ).where(model_cls.timestamp >= earliest_backfill_time)
         statuses = statuses.order_by(model_cls.timestamp.asc())
         if statuses.count() == 0:
             return
@@ -1162,8 +1163,8 @@ def backfill_influx(
             upload_baseunit_status(
                 [(s.to_data(), s.timestamp) for s in statuses],
                 tags_callback=lambda status_data: get_extra_tags_for_baseunit(
-                    session.query(BaseUnit).filter_by(
-                        hostname=status_data.base_unit.hostname
+                    session.query(BaseUnit).where(
+                        BaseUnit.hostname == status_data.base_unit.hostname
                     ).one(),
                     session=session,
                 ),
@@ -1206,8 +1207,8 @@ def backfill_influx(
             upload_power_management_statuses(
                 power_status_args,
                 tags_callback=lambda base_unit_info: get_extra_tags_for_baseunit(
-                    session.query(BaseUnit).filter_by(
-                        hostname=base_unit_info.hostname
+                    session.query(BaseUnit).where(
+                        BaseUnit.hostname == base_unit_info.hostname
                     ).one(),
                     session=session,
                 ),

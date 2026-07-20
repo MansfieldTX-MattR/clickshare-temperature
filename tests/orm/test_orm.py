@@ -381,8 +381,8 @@ def test_base_unit_status_from_status(
     db_session.add(status)
     db_session.commit()
 
-    status = db_session.query(BaseUnitStatusModel).filter_by(
-        base_unit_id=base_unit.id
+    status = db_session.query(BaseUnitStatusModel).where(
+        BaseUnitStatusModel.base_unit_id == base_unit.id
     ).one()
 
     assert status.base_unit_id == base_unit.id
@@ -867,9 +867,9 @@ def check_fully_populated_db_data(src_data: FullyPopulatedDBData, db_session: Se
     assert len(base_unit.power_management_statuses) == len(src_data.power_management_responses)
 
     for power_status_data, power_status_timestamp in src_data.power_management_responses:
-        power_status_model = db_session.query(PowerManagementStatusModel).filter_by(
-            base_unit_id=base_unit.id,
-            timestamp=power_status_timestamp,
+        power_status_model = db_session.query(PowerManagementStatusModel).where(
+            PowerManagementStatusModel.base_unit_id == base_unit.id,
+            PowerManagementStatusModel.timestamp == power_status_timestamp,
         ).one()
         assert power_status_model.power_mode_status == power_status_data.status
         assert power_status_model.timestamp == power_status_timestamp
@@ -877,9 +877,9 @@ def check_fully_populated_db_data(src_data: FullyPopulatedDBData, db_session: Se
     assert len(base_unit.statuses) == len(src_data.base_unit_statuses)
 
     for status_data, status_timestamp in src_data.base_unit_statuses:
-        status_model = db_session.query(BaseUnitStatusModel).filter_by(
-            base_unit_id=base_unit.id,
-            timestamp=status_timestamp,
+        status_model = db_session.query(BaseUnitStatusModel).where(
+            BaseUnitStatusModel.base_unit_id == base_unit.id,
+            BaseUnitStatusModel.timestamp == status_timestamp,
         ).one()
         assert status_model.base_unit_id == base_unit.id
         assert status_model.current_uptime == int(status_data.current_uptime.total_seconds())
@@ -891,9 +891,9 @@ def check_fully_populated_db_data(src_data: FullyPopulatedDBData, db_session: Se
 
     assert len(base_unit.usage_statuses) == len(src_data.base_unit_usage_statuses)
     for usage_status_data, usage_status_timestamp in src_data.base_unit_usage_statuses:
-        usage_status_model = db_session.query(BaseUnitUsageStatusModel).filter_by(
-            base_unit_id=base_unit.id,
-            timestamp=usage_status_timestamp,
+        usage_status_model = db_session.query(BaseUnitUsageStatusModel).where(
+            BaseUnitUsageStatusModel.base_unit_id == base_unit.id,
+            BaseUnitUsageStatusModel.timestamp == usage_status_timestamp,
         ).one()
         assert usage_status_model.in_use == usage_status_data.in_use
         assert usage_status_model.sharing == usage_status_data.sharing
@@ -902,10 +902,10 @@ def check_fully_populated_db_data(src_data: FullyPopulatedDBData, db_session: Se
     readings = base_unit.sensor_readings
     assert len(readings) == len(src_data.temperature_history.readings)
     for reading_data in src_data.temperature_history.readings:
-        reading_model = db_session.query(SensorReadingModel).filter_by(
-            timestamp=reading_data.timestamp,
-            sensor_type=reading_data.sensor,
-            base_unit_id=base_unit.id,
+        reading_model = db_session.query(SensorReadingModel).where(
+            SensorReadingModel.timestamp == reading_data.timestamp,
+            SensorReadingModel.sensor_type == reading_data.sensor,
+            SensorReadingModel.base_unit_id == base_unit.id,
         ).one()
         assert reading_model.value == reading_data.value
         assert reading_model.to_data() == reading_data

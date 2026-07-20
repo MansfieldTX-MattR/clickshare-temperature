@@ -189,16 +189,16 @@ def check_deserialized_database(
     """Check that the deserialized database contains the expected data
     """
     for base_unit_info, expected_readings in expected_data.items():
-        base_unit = session.query(models.BaseUnit).filter_by(
-            ip_address=base_unit_info.ip_address,
-            hostname=base_unit_info.hostname,
-            room_name=base_unit_info.room_name,
+        base_unit = session.query(models.BaseUnit).where(
+            models.BaseUnit.ip_address == base_unit_info.ip_address,
+            models.BaseUnit.hostname == base_unit_info.hostname,
+            models.BaseUnit.room_name == base_unit_info.room_name,
         ).one_or_none()
         assert base_unit is not None
         for sensor_type, expected_sensor_readings in expected_readings.items():
-            sensor_readings = session.query(models.SensorReading).filter_by(
-                base_unit_id=base_unit.id,
-                sensor_type=sensor_type,
+            sensor_readings = session.query(models.SensorReading).where(
+                models.SensorReading.base_unit_id == base_unit.id,
+                models.SensorReading.sensor_type == sensor_type,
             ).order_by(models.SensorReading.timestamp).all()
             assert len(sensor_readings) == len(expected_sensor_readings)
             for reading, expected in zip(sensor_readings, expected_sensor_readings):
@@ -327,8 +327,8 @@ def test_orm_deserialization_half_populated(
         num_readings = current_db_session.query(models.SensorReading).count()
         num_removed = 0
         for base_unit_info, _ in sensor_readings.items():
-            base_unit = current_db_session.query(models.BaseUnit).filter_by(
-                hostname=base_unit_info.hostname,
+            base_unit = current_db_session.query(models.BaseUnit).where(
+                models.BaseUnit.hostname == base_unit_info.hostname,
             ).one()
             num_to_remove = len(base_unit.sensor_readings) // 2
             for reading in base_unit.sensor_readings[:num_to_remove]:
