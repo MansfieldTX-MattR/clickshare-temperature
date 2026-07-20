@@ -3,6 +3,7 @@ from typing import Sequence, Iterator, Literal, overload
 from pathlib import Path
 
 
+from sqlalchemy import select, delete
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 from click_extra.testing import CliRunner
@@ -489,8 +490,8 @@ def test_location_model_ancestors_query(
             ancestor_pathlist = name_tuple[:-i]
             expected_ancestors.append(ancestor_pathlist)
         discovered_ancestors = set[PathList]()
-        query = location.get_ancestors_query()
-        ancestors = db_session.execute(query).scalars().all()
+        stmt = location.select_ancestors()
+        ancestors = db_session.execute(stmt).scalars().all()
         for ancestor in ancestors:
             assert ancestor.pathlist in expected_ancestors
             sibling_type = ancestor.get_sibling_type(session=db_session)
@@ -519,8 +520,8 @@ def test_location_model_descendants_query(
         discovered_pathlists = set[PathList]()
         discovered_pathlists.add(root_location.pathlist)
 
-        query = root_location.get_descendants_query()
-        descendants = db_session.execute(query).scalars().all()
+        stmt = root_location.select_descendants()
+        descendants = db_session.execute(stmt).scalars().all()
         for descendant in descendants:
             assert descendant is not root_location
             assert descendant.root_location is root_location
@@ -546,13 +547,14 @@ def test_location_model_deletion_with_descendants(
     assert db_session.query(models.Location).count() == len(location_name_tree)
 
     for root_location in models.Location.get_root_locations(session=db_session):
-        descendant_query = root_location.get_descendants_query()
-        descendant_ids = {loc.id for loc in db_session.execute(descendant_query).scalars().all()}
+        descendant_stmt = root_location.select_descendants()
+        descendant_ids = {loc.id for loc in db_session.execute(descendant_stmt).scalars().all()}
         db_session.delete(root_location)
         db_session.commit()
 
         # After deleting the root location, all of its descendants should also be deleted
-        remaining_location_ids = {loc.id for loc in db_session.query(models.Location).all()}
+        remaining_locations = db_session.execute(select(models.Location)).scalars().all()
+        remaining_location_ids = {loc.id for loc in remaining_locations}
         assert descendant_ids.isdisjoint(remaining_location_ids)
         assert root_location.id not in remaining_location_ids
 
@@ -608,7 +610,7 @@ def test_location_model_baseunit_assignment(
 
     # Check the get_base_units method with include_descendants=True for each location,
     # and verify that the returned BaseUnits match the expected values.
-    for location in db_session.query(models.Location).all():
+    for location in db_session.execute(select(models.Location)).scalars().all():
         location_base_units = location.get_base_units(session=db_session, include_descendants=True)
         expected_base_units = get_expected_base_units_for_location(location)
         assert set(location_base_units) == expected_base_units
@@ -672,7 +674,7 @@ def test_location_model_baseunit_assignment_deletion(
 
     # Then delete all the locations, which should leave the BaseUnits intact, but without a location
     if deletion_method == "bulk_delete":
-        db_session.query(models.Location).delete()
+        db_session.execute(delete(models.Location))
         db_session.commit()
     elif deletion_method == "individual_delete":
         # Delete locations one by one starting from the leaf nodes to avoid cascades
@@ -683,7 +685,8 @@ def test_location_model_baseunit_assignment_deletion(
                 if not location.child_locations:
                     yield location
 
-        while db_session.query(models.Location).count() > 0:
+        stmt = select(models.Location)
+        while db_session.execute(stmt).scalars().first() is not None:
             leaf_locations = list(gather_leaf_locations())
             assert len(leaf_locations) > 0, "Expected to find leaf locations to delete, but found none"
             for leaf_location in leaf_locations:

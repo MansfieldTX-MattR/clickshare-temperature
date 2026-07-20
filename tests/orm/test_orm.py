@@ -547,12 +547,12 @@ def test_get_online_statuses_for_influx_backfill_selection(
     ])
     db_session.commit()
 
-    query = get_online_statuses_for_influx_backfill(
+    stmt = get_online_statuses_for_influx_backfill(
         db_session,
         time_series_window=window,
         now=now,
     )
-    results = query.all()
+    results = db_session.execute(stmt).scalars().all()
 
     result_ids = {status.id for status in results}
     expected_ids = {
