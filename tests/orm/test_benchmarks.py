@@ -8,6 +8,7 @@ from pathlib import Path
 if TYPE_CHECKING:
     from pytest_codspeed import BenchmarkFixture
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 
@@ -22,6 +23,7 @@ from clickshare_temperature.orm import (
     get_session,
 )
 from clickshare_temperature.orm import models
+from clickshare_temperature.orm.utils import get_count_for_select
 from clickshare_temperature.orm.serialization import (
     serialize_database,
     deserialize_database,
@@ -156,8 +158,8 @@ def teardown_and_create_new_db_session(
     new_db_session = get_session()
 
     assert new_db_session is not db_session
-    assert new_db_session.query(models.BaseUnit).count() == 0
-    assert new_db_session.query(models.SensorReading).count() == 0
+    assert get_count_for_select(select(models.BaseUnit), session=new_db_session) == 0
+    assert get_count_for_select(select(models.SensorReading), session=new_db_session) == 0
     return new_db_session
 
 
@@ -189,17 +191,18 @@ def check_deserialized_database(
     """Check that the deserialized database contains the expected data
     """
     for base_unit_info, expected_readings in expected_data.items():
-        base_unit = session.query(models.BaseUnit).filter_by(
-            ip_address=base_unit_info.ip_address,
-            hostname=base_unit_info.hostname,
-            room_name=base_unit_info.room_name,
-        ).one_or_none()
+        base_unit_stmt = select(models.BaseUnit).where(
+            models.BaseUnit.ip_address == base_unit_info.ip_address,
+            models.BaseUnit.hostname == base_unit_info.hostname,
+            models.BaseUnit.room_name == base_unit_info.room_name,
+        )
+        base_unit = session.execute(base_unit_stmt).scalar_one_or_none()
         assert base_unit is not None
         for sensor_type, expected_sensor_readings in expected_readings.items():
-            sensor_readings = session.query(models.SensorReading).filter_by(
-                base_unit_id=base_unit.id,
+            sensor_readings_stmt = base_unit.select_sensor_readings(
                 sensor_type=sensor_type,
-            ).order_by(models.SensorReading.timestamp).all()
+            ).order_by(models.SensorReading.timestamp)
+            sensor_readings = session.execute(sensor_readings_stmt).scalars().all()
             assert len(sensor_readings) == len(expected_sensor_readings)
             for reading, expected in zip(sensor_readings, expected_sensor_readings):
                 assert reading.sensor_type == expected.sensor
@@ -324,19 +327,26 @@ def test_orm_deserialization_half_populated(
         deserialize_database(current_db_session, json_str)
 
         # Remove half of the sensor readings from the freshly-populated database
-        num_readings = current_db_session.query(models.SensorReading).count()
+        num_readings = get_count_for_select(
+            select(models.SensorReading),
+            session=current_db_session,
+        )
         num_removed = 0
         for base_unit_info, _ in sensor_readings.items():
-            base_unit = current_db_session.query(models.BaseUnit).filter_by(
-                hostname=base_unit_info.hostname,
-            ).one()
+            base_unit = current_db_session.execute(select(models.BaseUnit).where(
+                models.BaseUnit.hostname == base_unit_info.hostname,
+            )).scalar_one()
             num_to_remove = len(base_unit.sensor_readings) // 2
             for reading in base_unit.sensor_readings[:num_to_remove]:
                 current_db_session.delete(reading)
                 num_removed += 1
         current_db_session.commit()
         num_readings_expected = num_readings - num_removed
-        assert current_db_session.query(models.SensorReading).count() == num_readings_expected
+        actual_num_readings = get_count_for_select(
+            select(models.SensorReading),
+            session=current_db_session,
+        )
+        assert actual_num_readings == num_readings_expected
 
 
     def target() -> None:

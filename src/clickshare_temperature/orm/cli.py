@@ -10,8 +10,9 @@ import click
 import click_extra
 # from yarl import URL
 from aiohttp import ClientSession, ClientError
-from sqlalchemy import create_mock_engine, and_, or_
-from sqlalchemy.orm import Query, Session
+from sqlalchemy import create_mock_engine, select, and_, or_
+from sqlalchemy.sql.expression import Select
+from sqlalchemy.orm import Session
 
 if TYPE_CHECKING:
     from sqlalchemy.sql.ddl import BaseDDLElement
@@ -56,6 +57,7 @@ from .location_table import (
     LocationTableKey,
     show_locations_table,
 )
+from .utils import get_count_for_select
 from .serialization import serialize_database, deserialize_database
 from ..temperature_history import TemperatureHistory
 from ..utils import click_secho, get_baseunit_from_filename, is_valid_ip_or_hostname
@@ -206,9 +208,7 @@ def backfill_from_files(ctx_obj: CLIDbContext, directory: Path) -> None:
         for filepath in directory.glob("*.txt"):
             click_secho(f"Processing file {filepath}...", fg="blue")
             base_unit_info = get_baseunit_from_filename(filepath)
-            base_unit = session.query(BaseUnit).filter_by(
-                hostname=base_unit_info.hostname
-            ).one_or_none()
+            base_unit = BaseUnit.get_by_hostname(base_unit_info.hostname, session=session)
             if base_unit is None:
                 base_unit = BaseUnit(
                     hostname=base_unit_info.hostname,
@@ -223,9 +223,7 @@ def backfill_from_files(ctx_obj: CLIDbContext, directory: Path) -> None:
         for filepath in directory.glob("*.txt"):
             click_secho(f"Processing file {filepath}...", fg="blue")
             base_unit_info = get_baseunit_from_filename(filepath)
-            base_unit = session.query(BaseUnit).filter_by(
-                hostname=base_unit_info.hostname
-            ).one()
+            base_unit = BaseUnit.get_by_hostname(base_unit_info.hostname, session=session, raise_if_absent=True)
             temperature_history = TemperatureHistory.deserialize_str(base_unit_info, filepath.read_text())
             num_added, num_skipped = base_unit.add_sensor_readings(temperature_history.readings, session)
             click_secho(
@@ -273,9 +271,7 @@ def add_baseunit(ctx_obj: CLIDbContext, base_unit_ips: tuple[str, ...]) -> None:
 
     with get_db_session() as session:
         for baseunit_info in base_unit_infos:
-            base_unit = session.query(BaseUnit).filter_by(
-                hostname=baseunit_info.hostname
-            ).one_or_none()
+            base_unit = BaseUnit.get_by_hostname(baseunit_info.hostname, session=session)
             if base_unit is not None:
                 if base_unit.room_name != baseunit_info.room_name or base_unit.ip_address != baseunit_info.ip_address:
                     confirm_msg = '\n'.join([
@@ -325,7 +321,7 @@ def list_baseunits(ctx: click_extra.Context, ctx_obj: CLIDbContext) -> None:
     header = ("Room Name", "Hostname", "IP Address", "Location")
     data = []
     with get_db_session() as session:
-        base_units = session.query(BaseUnit).all()
+        base_units = BaseUnit.get_scalars_all(session)
         if len(base_units) == 0:
             click_secho("No BaseUnits found.", fg="yellow")
             return
@@ -407,7 +403,7 @@ def add_location(
     with get_db_session() as session:
         parent_location = None
         if parent_id is not None:
-            parent_location = session.query(Location).filter_by(id=parent_id).one_or_none()
+            parent_location = Location.get_by_id(parent_id, session=session)
             if parent_location is None:
                 click_secho(f"Parent location with ID {parent_id} not found, aborting", fg="red")
                 raise click.Abort()
@@ -462,7 +458,7 @@ def set_location_type(
                 raise click.Abort()
             location_id = location_row.id
 
-        location = session.query(Location).filter_by(id=location_id).one_or_none()
+        location = Location.get_by_id(location_id, session=session)
         if location is None:
             click_secho(f"Location with ID {location_id} not found, aborting", fg="red")
             raise click.Abort()
@@ -483,13 +479,13 @@ def set_location_type(
 def delete_location(ctx_obj: CLIDbContext, location_id: int) -> None:
     """Delete a Location from the database. Child locations will also be deleted."""
     with get_db_session() as session:
-        location = session.query(Location).filter_by(id=location_id).one_or_none()
+        location = Location.get_by_id(location_id, session=session)
         if location is None:
             click_secho(f"Location with ID {location_id} not found, aborting", fg="red")
             raise click.Abort()
 
         if len(location.child_locations) > 0:
-            descendant_select = location.get_descendants_query()
+            descendant_select = location.select_descendants()
             descendant_ids_and_paths = {
                 (loc.id, loc.path)
                 for loc in session.execute(descendant_select).scalars().all()
@@ -542,7 +538,7 @@ def assign_baseunit_location(
         header_keys = list(header_keys) + [key for key in required_keys if key not in header_keys]
 
     with get_db_session() as session:
-        base_unit = session.query(BaseUnit).filter_by(hostname=baseunit_hostname).one_or_none()
+        base_unit = BaseUnit.get_by_hostname(baseunit_hostname, session=session)
         if base_unit is None:
             click_secho(f"BaseUnit with hostname '{baseunit_hostname}' not found, aborting", fg="red")
             raise click.Abort()
@@ -571,7 +567,7 @@ def assign_baseunit_location(
                 raise click.Abort()
             location_id = location_row.id
 
-        location = session.query(Location).filter_by(id=location_id).one_or_none()
+        location = Location.get_by_id(location_id, session=session)
         if location is None:
             click_secho(f"Location with ID {location_id} not found, aborting", fg="red")
             raise click.Abort()
@@ -603,7 +599,7 @@ def assign_baseunit_location(
 def unassign_baseunit_location(ctx_obj: CLIDbContext, baseunit_hostname: str) -> None:
     """Unassign the Location from a BaseUnit."""
     with get_db_session() as session:
-        base_unit = session.query(BaseUnit).filter_by(hostname=baseunit_hostname).one_or_none()
+        base_unit = BaseUnit.get_by_hostname(baseunit_hostname, session=session)
         if base_unit is None:
             click_secho(f"BaseUnit with hostname '{baseunit_hostname}' not found, aborting", fg="red")
             raise click.Abort()
@@ -670,7 +666,7 @@ def update_baseunit_info(ctx_obj: CLIDbContext) -> None:
     async def update_all_baseunit_infos() -> None:
         async with create_aiohttp_session(**session_options) as aiohttp_session:
             with get_db_session() as session:
-                base_units = session.query(BaseUnit).all()
+                base_units = BaseUnit.get_scalars_all(session)
                 if len(base_units) == 0:
                     click_secho("No BaseUnits found.", fg="yellow")
                     return
@@ -741,7 +737,7 @@ def update_power_management_info(ctx_obj: CLIDbContext) -> None:
     async def update_all_power_management_infos() -> None:
         async with create_aiohttp_session(**session_options) as aiohttp_session:
             with get_db_session() as session:
-                base_units = session.query(BaseUnit).all()
+                base_units = BaseUnit.get_scalars_all(session)
                 if len(base_units) == 0:
                     click_secho("No BaseUnits found.", fg="yellow")
                     return
@@ -794,7 +790,7 @@ def update_statuses(ctx_obj: CLIDbContext, usage_only: bool) -> None:
     async def update_all_statuses() -> None:
         async with create_aiohttp_session(**session_options) as aiohttp_session:
             with get_db_session() as session:
-                base_units = session.query(BaseUnit).all()
+                base_units = BaseUnit.get_scalars_all(session)
                 if len(base_units) == 0:
                     click_secho("No BaseUnits found.", fg="yellow")
                     return
@@ -857,8 +853,8 @@ def get_online_statuses_for_influx_backfill(
     session: Session,
     time_series_window: datetime.timedelta = datetime.timedelta(hours=1),
     now: datetime.datetime|None = None,
-) -> Query[BaseUnitOnlineStatus]:
-    """Build a query selecting BaseUnitOnlineStatus rows requiring Influx backfill
+) -> Select[tuple[BaseUnitOnlineStatus]]:
+    """Build a select statement containing BaseUnitOnlineStatus rows requiring Influx backfill
 
     Selection includes either:
 
@@ -866,14 +862,14 @@ def get_online_statuses_for_influx_backfill(
     2. The latest status per BaseUnit when its last upload is missing or stale.
 
     Arguments:
-        session: The database session to use for the query
+        session: The database session to use for querying.
         time_series_window: A :class:`datetime.timedelta` representing the maximum
             allowed age of the last upload for a status to be considered "fresh".
         now: The current time to use when determining if the last upload is stale.
             If None, the current UTC time will be used.
 
     Returns:
-        A SQLAlchemy Query object selecting the BaseUnitOnlineStatus rows that
+        A SQLAlchemy Select object selecting the BaseUnitOnlineStatus rows that
         require Influx backfill
 
     """
@@ -881,7 +877,7 @@ def get_online_statuses_for_influx_backfill(
         now = timezone.utcnow()
 
     last_online_status_ids: set[int] = set()
-    for base_unit in session.query(BaseUnit).all():
+    for base_unit in BaseUnit.get_scalars_all(session):
         last_status = base_unit.last_online_status_instance()
         if last_status is not None and last_status.id is not None:
             last_online_status_ids.add(last_status.id)
@@ -894,7 +890,7 @@ def get_online_statuses_for_influx_backfill(
         ),
     )
 
-    return session.query(BaseUnitOnlineStatus).filter(
+    return select(BaseUnitOnlineStatus).filter(
         or_(
             BaseUnitOnlineStatus.uploaded_to_influx.is_(False),
             latest_stale_or_missing,
@@ -940,15 +936,15 @@ def fetch_readings_bulk(
     async def fetch_all() -> None:
         async with create_aiohttp_session(**session_options) as aiohttp_session:
             with get_db_session() as orm_session:
-                base_unit_query = orm_session.query(BaseUnit)
+                base_unit_select = select(BaseUnit)
                 if baseunit_ips is not None:
-                    base_unit_query = base_unit_query.filter(BaseUnit.ip_address.in_(baseunit_ips))
+                    base_unit_select = base_unit_select.filter(BaseUnit.ip_address.in_(baseunit_ips))
                 status_coros = [
                     update_baseunit_status(
                         base_unit, ctx_obj.auth_info, model_cls, orm_session,
                         aiohttp_session, request_options,
                     )
-                    for base_unit in base_unit_query.all()
+                    for base_unit in orm_session.execute(base_unit_select).scalars()
                 ]
                 await asyncio.gather(*status_coros)
                 orm_session.commit()  # Commit status updates before fetching sensor readings
@@ -981,7 +977,7 @@ def fetch_readings_bulk(
                         base_unit.set_online_status(False)
 
                 fetch_coros = set()
-                for base_unit in base_unit_query.all():
+                for base_unit in orm_session.execute(base_unit_select).scalars():
                     if base_unit is None:
                         continue
                     assert base_unit.id is not None, "BaseUnit ID should not be None after commit"
@@ -1024,18 +1020,18 @@ def backfill_influx(
         upload_baseunit_online_statuses,
     )
 
-    def iter_query_chunks[T](query: Query[T], chunk_size: int) -> Iterator[Query[T]]:
-        """Generic iterator to yield chunks of a SQLAlchemy query"""
-        if query.count() <= chunk_size:
-            yield query
-            return
-        offset = 0
+    def iter_select_chunks[T](select: Select[tuple[T]], chunk_size: int) -> Iterator[Select[tuple[T]]]:
+        """Generic iterator to yield chunks of a SQLAlchemy select statement
+
+        Assumes each yielded chunk is excluded from ``select`` (e.g. via an
+        updated status column that is committed) before the next chunk is
+        requested; otherwise this will loop forever.
+        """
         while True:
-            chunk = query.offset(offset).limit(chunk_size)
-            if chunk.first() is None:
+            chunk = select.limit(chunk_size)
+            if get_count_for_select(chunk, session=session) == 0:
                 break
             yield chunk
-            offset += chunk_size
 
     def get_earliest_backfill_time() -> datetime.datetime:
         now = timezone.utcnow()
@@ -1051,7 +1047,7 @@ def backfill_influx(
             return tags
         if base_unit.location_type_name is not None:
             tags[base_unit.location_type_name] = base_unit.location.name
-        ancestor_locations_q = base_unit.location.get_ancestors_query()
+        ancestor_locations_q = base_unit.location.select_ancestors()
         for ancestor in session.execute(ancestor_locations_q).scalars().all():
             if ancestor.location_type_name is not None:
                 tags[ancestor.location_type_name] = ancestor.name
@@ -1059,20 +1055,24 @@ def backfill_influx(
 
     def backfill_base_unit(session: Session, base_unit: BaseUnit) -> None:
         earliest_backfill_time = get_earliest_backfill_time()
-        sensor_query = session.query(SensorReading).filter_by(
-            base_unit_id=base_unit.id, uploaded_to_influx=False,
-        ).filter(SensorReading.timestamp >= earliest_backfill_time)
-        sensor_query = sensor_query.order_by(SensorReading.timestamp.asc())
-        if sensor_query.count() == 0:
+        sensor_select = select(SensorReading).where(
+            SensorReading.base_unit_id == base_unit.id,
+            SensorReading.uploaded_to_influx.is_(False),
+        ).where(SensorReading.timestamp >= earliest_backfill_time)
+        sensor_count = get_count_for_select(sensor_select, session=session)
+        if sensor_count == 0:
             return
         click_secho(
-            f"Backfilling {sensor_query.count()} sensor readings for BaseUnit '{base_unit.hostname}'...",
+            f"Backfilling {sensor_count} sensor readings for BaseUnit '{base_unit.hostname}'...",
             fg="blue",
         )
 
-        def inner_backfill(sensor_query: Query[SensorReading]) -> int:
+        def inner_backfill(sensor_select: Select[tuple[SensorReading]]) -> int:
             """Inner function to backfill a chunk of sensor readings"""
-            temperature_history = base_unit.to_temperature_history_data(session, sensor_query=sensor_query)
+            temperature_history = base_unit.to_temperature_history_data(
+                session,
+                sensor_select=sensor_select,
+            )
             num_backfilled = backfill_readings(
                 temperature_history.base_unit,
                 temperature_history,
@@ -1081,18 +1081,18 @@ def backfill_influx(
                     **get_extra_tags_for_baseunit(base_unit, session=session)
                 },
             )
-            for reading in sensor_query.all():
+            for reading in session.execute(sensor_select).scalars().all():
                 reading.uploaded_to_influx = True
             session.commit()
             return num_backfilled
 
         num_backfilled = 0
-        for sensor_query_chunk in iter_query_chunks(sensor_query, max_points_per_batch):
+        for sensor_select_chunk in iter_select_chunks(sensor_select, max_points_per_batch):
             click_secho(
                 f"  Backfilling next batch of up to {max_points_per_batch} readings for BaseUnit '{base_unit.hostname}'...",
                 fg="blue",
             )
-            num_backfilled += inner_backfill(sensor_query_chunk)
+            num_backfilled += inner_backfill(sensor_select_chunk)
         click_secho(
             f"Backfill complete for BaseUnit '{base_unit.hostname}'. Backfilled {num_backfilled} readings.",
             fg="green",
@@ -1101,19 +1101,20 @@ def backfill_influx(
     def backfill_online_statuses(session: Session) -> None:
         now = timezone.utcnow()
         time_series_window = datetime.timedelta(hours=1)
-        online_status_query = get_online_statuses_for_influx_backfill(
+        online_status_select = get_online_statuses_for_influx_backfill(
             session,
             time_series_window=time_series_window,
             now=now,
         )
-        if online_status_query.count() == 0:
+        online_status_count = get_count_for_select(online_status_select, session=session)
+        if online_status_count == 0:
             return
         click_secho(
-            f"Backfilling {online_status_query.count()} BaseUnitOnlineStatus entries...",
+            f"Backfilling {online_status_count} BaseUnitOnlineStatus entries...",
             fg="blue",
         )
         status_args: list[tuple[BaseUnitInfo, bool, datetime.datetime]] = []
-        for online_status in online_status_query.all():
+        for online_status in session.execute(online_status_select).scalars().all():
             base_unit_info = online_status.base_unit.to_data()
             # If this is a "re-upload" of a stale last status, use the current
             # time as the uploaded timestamp.
@@ -1130,13 +1131,13 @@ def backfill_influx(
         upload_baseunit_online_statuses(
             status_args,
             tags_callback=lambda base_unit_info: get_extra_tags_for_baseunit(
-                session.query(BaseUnit).filter_by(
-                    hostname=base_unit_info.hostname
-                ).one(),
+                BaseUnit.get_by_hostname(
+                    base_unit_info.hostname, session=session, raise_if_absent=True,
+                ),
                 session=session,
             ),
         )
-        for online_status in online_status_query.all():
+        for online_status in session.execute(online_status_select).scalars().all():
             online_status.uploaded_to_influx = True
             online_status.last_upload_to_influx = now
         session.commit()
@@ -1147,24 +1148,26 @@ def backfill_influx(
 
     def backfill_statuses[T: BaseUnitStatus | BaseUnitUsageStatus](session: Session, model_cls: type[T]) -> None:
         earliest_backfill_time = get_earliest_backfill_time()
-        statuses = session.query(model_cls).filter_by(
-            uploaded_to_influx=False
-        ).filter(model_cls.timestamp >= earliest_backfill_time)
-        statuses = statuses.order_by(model_cls.timestamp.asc())
-        if statuses.count() == 0:
+        statuses_select = select(model_cls).where(
+            model_cls.uploaded_to_influx.is_(False)
+        ).where(model_cls.timestamp >= earliest_backfill_time)
+        statuses_select = statuses_select.order_by(model_cls.timestamp.asc())
+        statuses_count = get_count_for_select(statuses_select, session=session)
+        if statuses_count == 0:
             return
         click_secho(
-            f"Backfilling and uploading {statuses.count()} {model_cls.__name__} entries...",
+            f"Backfilling and uploading {statuses_count} {model_cls.__name__} entries...",
             fg="blue",
         )
-        def backfill_inner(statuses: Query[T]) -> None:
+        def backfill_inner(status_select: Select[tuple[T]]) -> None:
             """Inner function to backfill a chunk of statuses"""
+            statuses = session.execute(status_select).scalars().all()
             upload_baseunit_status(
                 [(s.to_data(), s.timestamp) for s in statuses],
                 tags_callback=lambda status_data: get_extra_tags_for_baseunit(
-                    session.query(BaseUnit).filter_by(
-                        hostname=status_data.base_unit.hostname
-                    ).one(),
+                    BaseUnit.get_by_hostname(
+                        status_data.base_unit.hostname, session=session, raise_if_absent=True,
+                    ),
                     session=session,
                 ),
             )
@@ -1172,7 +1175,7 @@ def backfill_influx(
                 status.uploaded_to_influx = True
             session.commit()
 
-        for status_chunk in iter_query_chunks(statuses, max_points_per_batch):
+        for status_chunk in iter_select_chunks(statuses_select, max_points_per_batch):
             click_secho(
                 f"  Backfilling next batch of up to {max_points_per_batch} {model_cls.__name__} entries...",
                 fg="blue",
@@ -1186,19 +1189,23 @@ def backfill_influx(
 
     def backfill_power_statuses(session: Session) -> None:
         earliest_backfill_time = get_earliest_backfill_time()
-        power_statuses = session.query(PowerManagementStatus).filter_by(
-            uploaded_to_influx=False
-        ).filter(PowerManagementStatus.timestamp >= earliest_backfill_time)
-        power_statuses = power_statuses.order_by(PowerManagementStatus.timestamp.asc())
-        if power_statuses.count() == 0:
+        power_status_select = select(PowerManagementStatus).where(
+            PowerManagementStatus.uploaded_to_influx.is_(False)
+        ).where(PowerManagementStatus.timestamp >= earliest_backfill_time)
+        power_status_select = power_status_select.order_by(PowerManagementStatus.timestamp.asc())
+        power_status_count = get_count_for_select(power_status_select, session=session)
+        if power_status_count == 0:
             return
         click_secho(
-            f"Backfilling and uploading {power_statuses.count()} PowerManagementStatus entries...",
+            f"Backfilling and uploading {power_status_count} PowerManagementStatus entries...",
             fg="blue",
         )
 
-        def backfill_inner(power_statuses: Query[PowerManagementStatus]) -> None:
+        def backfill_inner(power_status_select: Select[tuple[PowerManagementStatus]]) -> None:
             """Inner function to backfill a chunk of PowerManagementStatus entries"""
+            power_statuses = session.execute(power_status_select).scalars().all()
+            if len(power_statuses) == 0:
+                return
             power_status_args: list[tuple[BaseUnitInfo, PowerModeStatus, datetime.datetime]] = [
                 (s.base_unit.to_data(), s.power_mode_status, s.timestamp)
                 for s in power_statuses
@@ -1206,9 +1213,9 @@ def backfill_influx(
             upload_power_management_statuses(
                 power_status_args,
                 tags_callback=lambda base_unit_info: get_extra_tags_for_baseunit(
-                    session.query(BaseUnit).filter_by(
-                        hostname=base_unit_info.hostname
-                    ).one(),
+                    BaseUnit.get_by_hostname(
+                        base_unit_info.hostname, session=session, raise_if_absent=True,
+                    ),
                     session=session,
                 ),
             )
@@ -1216,7 +1223,7 @@ def backfill_influx(
                 power_status.uploaded_to_influx = True
             session.commit()
 
-        for power_status_chunk in iter_query_chunks(power_statuses, max_points_per_batch):
+        for power_status_chunk in iter_select_chunks(power_status_select, max_points_per_batch):
             click_secho(
                 f"  Backfilling next batch of up to {max_points_per_batch} PowerManagementStatus entries...",
                 fg="blue",
@@ -1229,7 +1236,7 @@ def backfill_influx(
         )
 
     with get_db_session() as session:
-        for base_unit in session.query(BaseUnit).all():
+        for base_unit in session.execute(select(BaseUnit)).scalars().all():
             backfill_base_unit(session, base_unit)
 
         backfill_online_statuses(session)

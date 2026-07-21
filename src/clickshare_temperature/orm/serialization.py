@@ -8,6 +8,7 @@ from typing import Iterator, Sequence, Literal, TypedDict, Mapping
 import json
 from pathlib import Path
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 
@@ -55,7 +56,7 @@ structured format(s), beginning with version 1.0.
 def serialize_all(session: Session) -> Iterator[FullySerializedModelTD]:
     """Serialize all models in the database to an iterator of fully serialized model data."""
     for model_class in MODEL_CLASSES:
-        for instance in session.query(model_class).all():
+        for instance in session.execute(select(model_class)).scalars():
             assert isinstance(instance, Base)
             data = instance.serialize_fully()
             for key, value in data["data"].items():

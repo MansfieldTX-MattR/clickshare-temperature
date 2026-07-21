@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import NewType, ClassVar, Union, Literal, Self, overload
+from typing import NewType, ClassVar, Union, Literal, Sequence, Self, overload
 import datetime
 
 from aiohttp import ClientSession
@@ -9,10 +9,9 @@ from sqlalchemy.orm import (
     Mapped,
     mapped_column,
     relationship,
-    Query,
     aliased,
 )
-from sqlalchemy.sql.expression import Select
+from sqlalchemy.sql.expression import Select, CompoundSelect
 from sqlalchemy import ForeignKey, Index, func, select, tuple_, null
 from sqlalchemy.schema import UniqueConstraint
 
@@ -38,6 +37,7 @@ from ..temperature_history import (
 from .. import timezone
 from ..timezone import ensure_aware
 from ..utils import click_secho
+from .utils import get_count_for_select
 from .types import (
     Ordering, LocationSiblingType, RelationshipNaturalKey, _BaseModelSerializeTD,
 )
@@ -153,9 +153,10 @@ class LocationType(Base[LocationTypeNaturalKey, _LocationTypeSerializeTD]):
     @classmethod
     def get_by_name(cls, name: str, session: Session, raise_if_not_found: bool = False) -> Self|None:
         """Get a LocationType by its name"""
+        stmt = select(cls).where(cls.name == name)
         if raise_if_not_found:
-            return session.query(cls).filter_by(name=name).one()
-        return session.query(cls).filter_by(name=name).one_or_none()
+            return session.execute(stmt).scalar_one()
+        return session.execute(stmt).scalar_one_or_none()
 
     @property
     def natural_key(self) -> LocationTypeNaturalKey:
@@ -166,7 +167,7 @@ class LocationType(Base[LocationTypeNaturalKey, _LocationTypeSerializeTD]):
     def select_by_natural_key(cls, key: LocationTypeNaturalKey) -> Select[tuple[Self]]:
         """Get a select statement to retrieve a model instance by its natural key
         """
-        return select(cls).filter_by(name=key)
+        return select(cls).where(cls.name == key)
 
     def serialize(self) -> _LocationTypeSerializeTD:
         """Serialize this instance to a dictionary for JSON serialization"""
@@ -313,8 +314,38 @@ class Location(Base[LocationNaturalKey, _LocationSerializeTD]):
         """
         return tuple(part for part in path.split(cls.PATH_DELIMITER))
 
+    @overload
     @classmethod
-    def get_by_location_type(cls, location_type: LocationType|str, session: Session) -> list[Self]:
+    def get_by_id(cls, location_id: int, session: Session, raise_if_absent: Literal[True]) -> Self:
+        ...
+    @overload
+    @classmethod
+    def get_by_id(cls, location_id: int, session: Session, raise_if_absent: Literal[False] = False) -> Self|None:
+        ...
+    @classmethod
+    def get_by_id(cls, location_id: int, session: Session, raise_if_absent: bool = False) -> Self|None:
+        """Get a Location by its ID
+
+        Arguments:
+            location_id: The ID of the Location to get
+            session: The SQLAlchemy session to use for database operations
+            raise_if_absent: Whether to raise an exception if no Location with the given ID is found
+
+        Returns:
+            The Location instance with the given ID, or None if no such Location exists
+                and ``raise_if_absent`` is False
+
+        Raises:
+            sqlalchemy.exc.NoResultFound: If no Location with the given ID
+                exists and *raise_if_absent* is True
+        """
+        stmt = select(cls).where(cls.id == location_id)
+        if raise_if_absent:
+            return session.execute(stmt).scalar_one()
+        return session.execute(stmt).scalar_one_or_none()
+
+    @classmethod
+    def get_by_location_type(cls, location_type: LocationType|str, session: Session) -> Sequence[Self]:
         """Get a list of Location instances that have the given location type
 
         Arguments:
@@ -330,7 +361,9 @@ class Location(Base[LocationNaturalKey, _LocationSerializeTD]):
                 session=session,
                 raise_if_not_found=True,
             )
-        return session.query(cls).filter_by(location_type=location_type).all()
+        return session.execute(
+            select(cls).where(cls.location_type_id == location_type.id)
+        ).scalars().all()
 
     @classmethod
     def create_from_pathlist(cls, *names: str, session: Session) -> Self:
@@ -357,10 +390,12 @@ class Location(Base[LocationNaturalKey, _LocationSerializeTD]):
             parent_location = None
             for name in names:
                 parent_id = parent_location.id if parent_location is not None else None
-                location = session.query(cls).filter_by(
-                    name=name,
-                    parent_location_id=parent_id,
-                ).one_or_none()
+                location = session.execute(
+                    select(cls).where(
+                        cls.name == name,
+                        cls.parent_location_id == parent_id,
+                    )
+                ).scalar_one_or_none()
                 if location is None:
                     location = cls(name=name, parent_location=parent_location)
                     session.add(location)
@@ -391,10 +426,12 @@ class Location(Base[LocationNaturalKey, _LocationSerializeTD]):
         parent_location = None
         for name in names:
             parent_id = parent_location.id if parent_location is not None else None
-            location = session.query(cls).filter_by(
-                name=name,
-                parent_location_id=parent_id,
-            ).one_or_none()
+            location = session.execute(
+                select(cls).where(
+                    cls.name == name,
+                    cls.parent_location_id == parent_id,
+                )
+            ).scalar_one_or_none()
             if location is None:
                 return None
             parent_location = location
@@ -402,10 +439,17 @@ class Location(Base[LocationNaturalKey, _LocationSerializeTD]):
         return parent_location
 
     @classmethod
-    def get_root_locations(cls, session: Session) -> Query[Self]:
-        """Get a query for all root locations (i.e. locations with no parent location)
+    def select_root_locations(cls) -> Select[tuple[Self]]:
+        """Get a select statement for all root locations (i.e. locations with
+        no parent location)
         """
-        return session.query(cls).filter_by(parent_location_id=None)
+        return select(cls).where(cls.parent_location_id.is_(None))
+
+    @classmethod
+    def get_root_locations(cls, session: Session) -> Sequence[Self]:
+        """Get all root locations (i.e. locations with no parent location)
+        """
+        return session.execute(cls.select_root_locations()).scalars().all()
 
     def get_sibling_type(self, session: Session) -> LocationSiblingType:
         """Get the :type:`LocationSiblingType` of this Location among its
@@ -424,12 +468,12 @@ class Location(Base[LocationNaturalKey, _LocationSerializeTD]):
         """Check whether this Location is the first child of its parent location
         """
         if self.parent_location is None:
-            query = self.get_root_locations(session)
-            sibling_count = query.count()
+            stmt = self.select_root_locations().order_by(self.__class__.id)
+            sibling_count = get_count_for_select(stmt, session=session)
             if sibling_count == 0:
                 return True
-            query = query.slice(0, 1)
-            first_sibling = query.one()
+            stmt = stmt.slice(0, 1)
+            first_sibling = session.execute(stmt).scalar_one()
             return self.id == first_sibling.id
         first_sibling = self.parent_location.child_locations[0]
         return self.id == first_sibling.id
@@ -438,12 +482,12 @@ class Location(Base[LocationNaturalKey, _LocationSerializeTD]):
         """Check whether this Location is the last child of its parent location
         """
         if self.parent_location is None:
-            query = self.get_root_locations(session)
-            sibling_count = query.count()
+            stmt = self.select_root_locations().order_by(self.__class__.id)
+            sibling_count = get_count_for_select(session=session, select_stmt=stmt)
             if sibling_count == 0:
                 return True
-            query = query.slice(sibling_count - 1, sibling_count)
-            last_sibling = query.one()
+            stmt = stmt.slice(sibling_count - 1, sibling_count)
+            last_sibling = session.execute(stmt).scalar_one()
             return self.id == last_sibling.id
         sibling_count = len(self.parent_location.child_locations)
         if sibling_count == 0:
@@ -451,22 +495,22 @@ class Location(Base[LocationNaturalKey, _LocationSerializeTD]):
         last_sibling = self.parent_location.child_locations[-1]
         return self.id == last_sibling.id
 
-    def get_siblings_query(self, session: Session) -> Query[Self]:
-        """Get a query for all siblings of this Location, including itself
+    def select_siblings(self) -> Select[tuple[Self]]:
+        """Get a select statement for all siblings of this Location, including itself
         """
         if self.parent_location is None:
-            return self.get_root_locations(session)
+            return self.select_root_locations()
         cls = self.__class__
-        return session.query(cls).filter_by(parent_location_id=self.parent_location_id)
+        return select(cls).where(cls.parent_location_id == self.parent_location_id)
 
     def get_sibling_count(self, session: Session) -> int:
         """Get the number of siblings of this Location, including itself
         """
-        return self.get_siblings_query(session).count()
+        return get_count_for_select(self.select_siblings(), session=session)
 
-    def get_ancestors_query(self) -> Select[tuple[Self]]:
-        """Get a query for all ancestor Locations of this Location, starting with the parent location and
-        ending with the top-level parent location
+    def select_ancestors(self) -> Select[tuple[Self]]:
+        """Get a select statement for all ancestor Locations of this Location,
+        starting with the parent location and ending with the top-level parent location
         """
         cls = self.__class__
         base_q = select(cls.id, cls.parent_location_id).where(cls.id == self.parent_location_id)
@@ -479,8 +523,8 @@ class Location(Base[LocationNaturalKey, _LocationSerializeTD]):
         cte_stmt = cte.union_all(recursive_q)
         return select(cls).join(cte_stmt, cls.id == cte_stmt.c.id)
 
-    def get_descendants_query(self) -> Select[tuple[Location]]:
-        """Get a query for all descendant Locations of this Location in depth-first order
+    def select_descendants(self) -> Select[tuple[Location]]:
+        """Get a select statement for all descendant Locations of this Location in depth-first order
         """
         cls = Location
         base_q = select(cls.id, cls.parent_location_id).where(cls.parent_location_id == self.id)
@@ -493,27 +537,27 @@ class Location(Base[LocationNaturalKey, _LocationSerializeTD]):
         cte_stmt = cte.union_all(recursive_q)
         return select(cls).join(cte_stmt, cls.id == cte_stmt.c.id)
 
-    def get_base_units_query(self, session: Session, include_descendants: bool = False) -> Query[BaseUnit]:
-        """Get a query for all BaseUnits at this Location and optionally at all
+    def select_base_units(self, include_descendants: bool = False) -> Select[tuple[BaseUnit]]:
+        """Get a select statement for all BaseUnits at this Location and optionally at all
         descendant Locations
 
         Arguments:
-            session: The SQLAlchemy session to use for database operations
             include_descendants: Whether to include BaseUnits at descendant Locations
 
         Returns:
-            A SQLAlchemy Query object for the BaseUnits at this Location and
+            A SQLAlchemy Select object for the BaseUnits at this Location and
                 optionally at descendant Locations
         """
-        q = session.query(BaseUnit).filter_by(location_id=self.id)
+        base_q = select(Location.id).where(Location.id == self.id)
+        location_ids_q: Select[tuple[int]] | CompoundSelect[tuple[int]]
         if include_descendants:
-            descendant_locations_q = self.get_descendants_query().with_only_columns(Location.id)
-            q = q.union_all(
-                session.query(BaseUnit).filter(BaseUnit.location_id.in_(descendant_locations_q))
-            )
-        return q
+            descendant_ids_q = self.select_descendants().with_only_columns(Location.id)
+            location_ids_q = base_q.union_all(descendant_ids_q)
+        else:
+            location_ids_q = base_q
+        return select(BaseUnit).where(BaseUnit.location_id.in_(location_ids_q))
 
-    def get_base_units(self, session: Session, include_descendants: bool = False) -> list[BaseUnit]:
+    def get_base_units(self, session: Session, include_descendants: bool = False) -> Sequence[BaseUnit]:
         """Get a list of all BaseUnits at this Location and optionally at all
         descendant Locations
 
@@ -525,7 +569,8 @@ class Location(Base[LocationNaturalKey, _LocationSerializeTD]):
             A list of BaseUnit instances at this Location and optionally at
                 descendant Locations
         """
-        return self.get_base_units_query(session=session, include_descendants=include_descendants).all()
+        stmt = self.select_base_units(include_descendants=include_descendants)
+        return session.execute(stmt).scalars().all()
 
     @property
     def natural_key(self) -> LocationNaturalKey:
@@ -545,7 +590,7 @@ class Location(Base[LocationNaturalKey, _LocationSerializeTD]):
         if first_child_name is None:
             # Easy case: we can filter by name and parent_location_id is null
             # to get the root location with the given name
-            return select(cls).filter_by(name=root_name, parent_location_id=None)
+            return select(cls).where(cls.name == root_name, cls.parent_location_id.is_(None))
 
         # We can only filter by the full pathlist, so we have to create a complex query
         # that traverses the location hierarchy and filters by each level of the pathlist.
@@ -694,7 +739,7 @@ class BaseUnit(Base[BaseUnitNaturalKey, _BaseUnitSerializeTD]):
     def select_by_natural_key(cls, key: BaseUnitNaturalKey) -> Select[tuple[Self]]:
         """Get a select statement to retrieve a model instance by its natural key
         """
-        return select(cls).filter_by(hostname=key)
+        return select(cls).where(cls.hostname == key)
 
     def serialize(self) -> _BaseUnitSerializeTD:
         """Serialize this instance to a dictionary for JSON serialization
@@ -738,15 +783,44 @@ class BaseUnit(Base[BaseUnitNaturalKey, _BaseUnitSerializeTD]):
             room_name=info.room_name,
         )
 
+    @overload
+    @classmethod
+    def get_by_hostname(cls, hostname: str, session: Session, raise_if_absent: Literal[True]) -> Self:
+        ...
+    @overload
+    @classmethod
+    def get_by_hostname(cls, hostname: str, session: Session, raise_if_absent: Literal[False] = False) -> Self|None:
+        ...
+    @classmethod
+    def get_by_hostname(cls, hostname: str, session: Session, raise_if_absent: bool = False) -> Self|None:
+        """Get a BaseUnit by its hostname
+
+        Arguments:
+            hostname: The hostname of the BaseUnit to retrieve
+            session: The SQLAlchemy session to use for database operations
+            raise_if_absent: If True, raise a ValueError if no BaseUnit with the given hostname exists.
+                If False (the default), return None instead.
+
+        Returns:
+            The BaseUnit instance with the given hostname, or None if no such
+                BaseUnit exists (and *raise_if_absent* is False)
+
+        Raises:
+            sqlalchemy.exc.NoResultFound: If no BaseUnit with the given hostname
+                exists and *raise_if_absent* is True
+        """
+        stmt = select(cls).where(cls.hostname == hostname)
+        if raise_if_absent:
+            return session.execute(stmt).scalar_one()
+        return session.execute(stmt).scalar_one_or_none()
+
     @classmethod
     def get_or_create(cls, info: BaseUnitInfo, session: Session) -> tuple[Self, bool]:
         """Get a BaseUnit from the database matching the given :class:`.types.BaseUnitInfo`,
         or create it if it doesn't exist
         """
         created = False
-        instance = session.query(cls).filter(
-            cls.hostname == info.hostname
-        ).one_or_none()
+        instance = cls.get_by_hostname(info.hostname, session=session)
         if instance is not None:
             changed = False
             if instance.ip_address != info.ip_address:
@@ -784,9 +858,10 @@ class BaseUnit(Base[BaseUnitNaturalKey, _BaseUnitSerializeTD]):
         """Get the most recent :class:`BaseUnitOnlineStatus` for this BaseUnit, or None if no statuses exist
         """
         session = self._get_current_orm_session()
-        return session.query(BaseUnitOnlineStatus).filter_by(
-            base_unit_id=self.id
-        ).order_by(BaseUnitOnlineStatus.timestamp.desc()).first()
+        stmt = select(BaseUnitOnlineStatus).where(
+            BaseUnitOnlineStatus.base_unit_id == self.id
+        ).order_by(BaseUnitOnlineStatus.timestamp.desc()).limit(1)
+        return session.execute(stmt).scalar_one_or_none()
 
     def set_online_status(
         self,
@@ -837,10 +912,12 @@ class BaseUnit(Base[BaseUnitNaturalKey, _BaseUnitSerializeTD]):
         )
         dt_sensor_keys = set((timezone.ensure_aware(r.timestamp), r.sensor) for r in temperature_history_data.readings)
 
-        existing_readings = session.query(SensorReading).filter(
-            SensorReading.base_unit_id == self.id,
-            tuple_(SensorReading.timestamp, SensorReading.sensor_type).in_(dt_sensor_keys),
-        ).all()
+        existing_readings = session.execute(
+            select(SensorReading).where(
+                SensorReading.base_unit_id == self.id,
+                tuple_(SensorReading.timestamp, SensorReading.sensor_type).in_(dt_sensor_keys),
+            )
+        ).scalars().all()
         existing_keys = set((r.timestamp, r.sensor_type) for r in existing_readings)
         click_secho(f"Fetched {len(temperature_history_data.readings)} sensor readings for BaseUnit '{self.hostname}'", fg="blue")
         num_added = 0
@@ -865,10 +942,12 @@ class BaseUnit(Base[BaseUnitNaturalKey, _BaseUnitSerializeTD]):
                 were added and how many were skipped due to already existing in the database.
         """
         dt_sensor_keys = set((timezone.ensure_aware(r.timestamp), r.sensor) for r in readings)
-        existing_readings = session.query(SensorReading).filter(
-            SensorReading.base_unit_id == self.id,
-            tuple_(SensorReading.timestamp, SensorReading.sensor_type).in_(dt_sensor_keys),
-        ).all()
+        existing_readings = session.execute(
+            select(SensorReading).where(
+                SensorReading.base_unit_id == self.id,
+                tuple_(SensorReading.timestamp, SensorReading.sensor_type).in_(dt_sensor_keys),
+            )
+        ).scalars().all()
         existing_keys = set((r.timestamp, r.sensor_type) for r in existing_readings)
         num_added = 0
         num_skipped = 0
@@ -896,42 +975,44 @@ class BaseUnit(Base[BaseUnitNaturalKey, _BaseUnitSerializeTD]):
         already exists in the database.
         """
         timestamp = timezone.ensure_aware(reading.timestamp)
-        existing_reading = session.query(SensorReading).filter_by(
-            base_unit_id=self.id,
-            timestamp=timestamp,
-            sensor_type=reading.sensor,
-        ).one_or_none()
+        existing_reading = session.execute(
+            select(SensorReading).where(
+                SensorReading.base_unit_id == self.id,
+                SensorReading.timestamp == timestamp,
+                SensorReading.sensor_type == reading.sensor,
+            )
+        ).scalars().one_or_none()
         return existing_reading is not None
 
-    def get_sensor_readings(
+    def select_sensor_readings(
         self,
-        session: Session,
         sensor_type: SensorType|None = None,
         order_by: Ordering|None = None
-    ) -> Query[SensorReading]:
-        """Get sensor readings for this BaseUnit, optionally filtered by sensor type
+    ) -> Select[tuple[SensorReading]]:
+        """Get a select statement for sensor readings for this BaseUnit, optionally filtered by sensor type
         """
-        query = session.query(SensorReading).filter_by(base_unit_id=self.id)
+        stmt = select(SensorReading).where(SensorReading.base_unit_id == self.id)
         if sensor_type is not None:
-            query = query.filter_by(sensor_type=sensor_type)
+            stmt = stmt.where(SensorReading.sensor_type == sensor_type)
         if order_by == "desc":
-            return query.order_by(SensorReading.timestamp.desc())
+            stmt = stmt.order_by(SensorReading.timestamp.desc())
         elif order_by == "asc":
-            return query.order_by(SensorReading.timestamp.asc())
-        return query
+            stmt = stmt.order_by(SensorReading.timestamp.asc())
+        return stmt
 
     def to_temperature_history_data(
         self,
         session: Session,
-        sensor_query: Query[SensorReading]|None = None
+        sensor_select: Select[tuple[SensorReading]]|None = None
     ) -> TemperatureHistoryData:
         """Convert this BaseUnit and its sensor readings to a
         :class:`.temperature_history.TemperatureHistory` instance
         """
-        if sensor_query is None:
-            sensor_query = self.get_sensor_readings(session)
+        if sensor_select is None:
+            sensor_select = self.select_sensor_readings()
+        results = session.execute(sensor_select).scalars().all()
         readings = [
-            r.to_data() for r in sensor_query.all()
+            r.to_data() for r in results
         ]
         return TemperatureHistoryData(
             base_unit=self.to_data(),
@@ -1682,10 +1763,10 @@ class SensorReading(Base[SensorReadingNaturalKey, _SensorReadingSerializeTD]):
         )
 
     @classmethod
-    def filter_by_sensor_type(cls, session: Session, sensor_type: SensorType) -> Query[SensorReading]:
-        """Get a query for SensorReadings of a specific sensor type
+    def select_by_sensor_type(cls, sensor_type: SensorType) -> Select[tuple[SensorReading]]:
+        """Get a select statement for SensorReadings of a specific sensor type
         """
-        return session.query(SensorReading).filter_by(sensor_type=sensor_type)
+        return select(SensorReading).where(SensorReading.sensor_type == sensor_type)
 
     @classmethod
     def from_data(

@@ -3,8 +3,9 @@ from typing import Sequence, Iterator, Literal, overload
 from pathlib import Path
 
 
+from sqlalchemy import select, delete
 from sqlalchemy.orm import Session
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, NoResultFound
 from click_extra.testing import CliRunner
 
 from clickshare_temperature.orm import (
@@ -20,6 +21,7 @@ from clickshare_temperature.orm.serialization import (
 )
 from clickshare_temperature.orm.cli import list_locations
 from clickshare_temperature.orm.types import LocationSiblingType
+from clickshare_temperature.orm.utils import get_count_for_select
 from clickshare_temperature.types import BaseUnitInfo
 
 from .conftest import _reset_engine
@@ -403,6 +405,23 @@ def test_location_model_get_by_location_type(
             assert location.pathlist in pathlists
 
 
+def test_location_model_get_by_id(db_session: Session) -> None:
+    """Test `get_by_id` method and ensure its exceptions are raised as excpected
+    """
+    location_0 = models.Location(name="foo")
+    db_session.add(location_0)
+    db_session.commit()
+
+    location_1 = models.Location.get_by_id(location_0.id, session=db_session)
+    assert location_1 is not None
+
+    location_2 = models.Location.get_by_id(location_0.id, session=db_session, raise_if_absent=True)
+
+    assert location_0 is location_1 is location_2
+
+    with pytest.raises(NoResultFound):
+        models.Location.get_by_id(location_0.id + 1, session=db_session, raise_if_absent=True)
+
 
 def test_location_model_hierarchy(
     db_session: Session,
@@ -489,8 +508,8 @@ def test_location_model_ancestors_query(
             ancestor_pathlist = name_tuple[:-i]
             expected_ancestors.append(ancestor_pathlist)
         discovered_ancestors = set[PathList]()
-        query = location.get_ancestors_query()
-        ancestors = db_session.execute(query).scalars().all()
+        stmt = location.select_ancestors()
+        ancestors = db_session.execute(stmt).scalars().all()
         for ancestor in ancestors:
             assert ancestor.pathlist in expected_ancestors
             sibling_type = ancestor.get_sibling_type(session=db_session)
@@ -519,8 +538,8 @@ def test_location_model_descendants_query(
         discovered_pathlists = set[PathList]()
         discovered_pathlists.add(root_location.pathlist)
 
-        query = root_location.get_descendants_query()
-        descendants = db_session.execute(query).scalars().all()
+        stmt = root_location.select_descendants()
+        descendants = db_session.execute(stmt).scalars().all()
         for descendant in descendants:
             assert descendant is not root_location
             assert descendant.root_location is root_location
@@ -543,20 +562,22 @@ def test_location_model_deletion_with_descendants(
         models.Location.create_from_pathlist(*name_tuple, session=db_session)
     db_session.commit()
 
-    assert db_session.query(models.Location).count() == len(location_name_tree)
+    model_count = get_count_for_select(select(models.Location), session=db_session)
+    assert model_count == len(location_name_tree)
 
     for root_location in models.Location.get_root_locations(session=db_session):
-        descendant_query = root_location.get_descendants_query()
-        descendant_ids = {loc.id for loc in db_session.execute(descendant_query).scalars().all()}
+        descendant_stmt = root_location.select_descendants()
+        descendant_ids = {loc.id for loc in db_session.execute(descendant_stmt).scalars().all()}
         db_session.delete(root_location)
         db_session.commit()
 
         # After deleting the root location, all of its descendants should also be deleted
-        remaining_location_ids = {loc.id for loc in db_session.query(models.Location).all()}
+        remaining_locations = db_session.execute(select(models.Location)).scalars().all()
+        remaining_location_ids = {loc.id for loc in remaining_locations}
         assert descendant_ids.isdisjoint(remaining_location_ids)
         assert root_location.id not in remaining_location_ids
 
-    assert db_session.query(models.Location).count() == 0
+    assert get_count_for_select(select(models.Location), session=db_session) == 0
 
 
 
@@ -608,7 +629,7 @@ def test_location_model_baseunit_assignment(
 
     # Check the get_base_units method with include_descendants=True for each location,
     # and verify that the returned BaseUnits match the expected values.
-    for location in db_session.query(models.Location).all():
+    for location in db_session.execute(select(models.Location)).scalars().all():
         location_base_units = location.get_base_units(session=db_session, include_descendants=True)
         expected_base_units = get_expected_base_units_for_location(location)
         assert set(location_base_units) == expected_base_units
@@ -672,18 +693,19 @@ def test_location_model_baseunit_assignment_deletion(
 
     # Then delete all the locations, which should leave the BaseUnits intact, but without a location
     if deletion_method == "bulk_delete":
-        db_session.query(models.Location).delete()
+        db_session.execute(delete(models.Location))
         db_session.commit()
     elif deletion_method == "individual_delete":
         # Delete locations one by one starting from the leaf nodes to avoid cascades
 
         def gather_leaf_locations() -> Iterator[models.Location]:
             """Helper function to gather leaf locations in the hierarchy for individual deletion"""
-            for location in db_session.query(models.Location).all():
+            for location in models.Location.get_scalars_all(db_session):
                 if not location.child_locations:
                     yield location
 
-        while db_session.query(models.Location).count() > 0:
+        stmt = select(models.Location)
+        while db_session.execute(stmt).scalars().first() is not None:
             leaf_locations = list(gather_leaf_locations())
             assert len(leaf_locations) > 0, "Expected to find leaf locations to delete, but found none"
             for leaf_location in leaf_locations:
@@ -695,9 +717,9 @@ def test_location_model_baseunit_assignment_deletion(
         db_session.commit()
 
     # Verify that all locations have been deleted and BaseUnits have no location
-    assert db_session.query(models.Location).count() == 0
-    assert db_session.query(models.BaseUnit).count() == len(all_base_units)
-    for base_unit in db_session.query(models.BaseUnit).all():
+    assert get_count_for_select(select(models.Location), session=db_session) == 0
+    assert get_count_for_select(select(models.BaseUnit), session=db_session) == len(all_base_units)
+    for base_unit in models.BaseUnit.get_scalars_all(db_session):
         assert base_unit.location is None
 
 
@@ -745,7 +767,7 @@ def test_location_model_serialization(
 
     assert new_db_session is not db_session
     db_session = new_db_session
-    assert db_session.query(models.Location).count() == 0
+    assert get_count_for_select(select(models.Location), session=db_session) == 0
 
     deserialize_database(db_session, serialized_db_json)
     for name_tuple, location_type_name in location_with_type_name.items():

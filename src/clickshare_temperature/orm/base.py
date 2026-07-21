@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Self, Any
+from typing import Sequence, Self, Any
 from abc import abstractmethod
 import datetime
 import enum
@@ -9,7 +9,7 @@ from sqlalchemy.orm import (
     Session,
     DeclarativeBase,
 )
-from sqlalchemy import inspect
+from sqlalchemy import inspect, select
 from sqlalchemy import String, Float, Select
 from sqlalchemy_utc import UtcDateTime
 
@@ -50,6 +50,12 @@ class Base[NaturalKeyType, SerializeType: (_BaseModelSerializeTD[Any])](Declarat
         """Get a model instance by its natural key"""
         stmt = cls.select_by_natural_key(key)
         return session.execute(stmt).scalar_one_or_none()
+
+    @classmethod
+    def get_scalars_all(cls, session: Session) -> Sequence[Self]:
+        """Get a sequence of all instances of this model
+        """
+        return session.execute(select(cls)).scalars().all()
 
     @abstractmethod
     def serialize(self) -> SerializeType:

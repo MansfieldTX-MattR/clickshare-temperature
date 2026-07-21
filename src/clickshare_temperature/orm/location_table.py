@@ -6,6 +6,7 @@ import click
 import click_extra
 
 from .models import Location
+from .utils import get_count_for_select
 from .types import LocationSiblingType
 
 
@@ -207,7 +208,7 @@ def get_location_table_data(session: Session) -> list[LocationTableRow]:
     order of the locations in depth-first traversal of the hierarchy.
     """
     data: list[LocationTableRow] = []
-    root_locations = session.query(Location).filter_by(parent_location=None).all()
+    root_locations = Location.get_root_locations(session=session)
     current_index = 0
 
     def handle_location(
@@ -218,6 +219,10 @@ def get_location_table_data(session: Session) -> list[LocationTableRow]:
         :class:`Location` and recursively handle its child locations
         """
         nonlocal current_index
+        baseunit_total_count = get_count_for_select(
+            location.select_base_units(include_descendants=True),
+            session=session
+        )
         obj = LocationTableRow(
             id=location.id,
             name=location.name,
@@ -227,7 +232,7 @@ def get_location_table_data(session: Session) -> list[LocationTableRow]:
             is_root=location.is_root,
             nest_level=location.nest_level,
             baseunit_count=len(location.base_units),
-            baseunit_total_count=location.get_base_units_query(session, include_descendants=True).count(),
+            baseunit_total_count=baseunit_total_count,
             parent=parent,
         )
         yield obj
