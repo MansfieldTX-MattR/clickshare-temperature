@@ -153,9 +153,10 @@ class LocationType(Base[LocationTypeNaturalKey, _LocationTypeSerializeTD]):
     @classmethod
     def get_by_name(cls, name: str, session: Session, raise_if_not_found: bool = False) -> Self|None:
         """Get a LocationType by its name"""
+        stmt = select(cls).where(cls.name == name)
         if raise_if_not_found:
-            return session.query(cls).where(cls.name == name).one()
-        return session.query(cls).where(cls.name == name).one_or_none()
+            return session.execute(stmt).scalar_one()
+        return session.execute(stmt).scalar_one_or_none()
 
     @property
     def natural_key(self) -> LocationTypeNaturalKey:
@@ -338,12 +339,13 @@ class Location(Base[LocationNaturalKey, _LocationSerializeTD]):
             sqlalchemy.exc.NoResultFound: If no Location with the given ID
                 exists and *raise_if_absent* is True
         """
+        stmt = select(cls).where(cls.id == location_id)
         if raise_if_absent:
-            return session.query(cls).where(cls.id == location_id).one()
-        return session.query(cls).where(cls.id == location_id).one_or_none()
+            return session.execute(stmt).scalar_one()
+        return session.execute(stmt).scalar_one_or_none()
 
     @classmethod
-    def get_by_location_type(cls, location_type: LocationType|str, session: Session) -> list[Self]:
+    def get_by_location_type(cls, location_type: LocationType|str, session: Session) -> Sequence[Self]:
         """Get a list of Location instances that have the given location type
 
         Arguments:
@@ -359,7 +361,9 @@ class Location(Base[LocationNaturalKey, _LocationSerializeTD]):
                 session=session,
                 raise_if_not_found=True,
             )
-        return session.query(cls).where(cls.location_type == location_type).all()
+        return session.execute(
+            select(cls).where(cls.location_type_id == location_type.id)
+        ).scalars().all()
 
     @classmethod
     def create_from_pathlist(cls, *names: str, session: Session) -> Self:
@@ -386,10 +390,12 @@ class Location(Base[LocationNaturalKey, _LocationSerializeTD]):
             parent_location = None
             for name in names:
                 parent_id = parent_location.id if parent_location is not None else None
-                location = session.query(cls).where(
-                    cls.name == name,
-                    cls.parent_location_id == parent_id,
-                ).one_or_none()
+                location = session.execute(
+                    select(cls).where(
+                        cls.name == name,
+                        cls.parent_location_id == parent_id,
+                    )
+                ).scalar_one_or_none()
                 if location is None:
                     location = cls(name=name, parent_location=parent_location)
                     session.add(location)
@@ -420,10 +426,12 @@ class Location(Base[LocationNaturalKey, _LocationSerializeTD]):
         parent_location = None
         for name in names:
             parent_id = parent_location.id if parent_location is not None else None
-            location = session.query(cls).where(
-                cls.name == name,
-                cls.parent_location_id == parent_id,
-            ).one_or_none()
+            location = session.execute(
+                select(cls).where(
+                    cls.name == name,
+                    cls.parent_location_id == parent_id,
+                )
+            ).scalar_one_or_none()
             if location is None:
                 return None
             parent_location = location
@@ -812,9 +820,7 @@ class BaseUnit(Base[BaseUnitNaturalKey, _BaseUnitSerializeTD]):
         or create it if it doesn't exist
         """
         created = False
-        instance = session.query(cls).filter(
-            cls.hostname == info.hostname
-        ).one_or_none()
+        instance = cls.get_by_hostname(info.hostname, session=session)
         if instance is not None:
             changed = False
             if instance.ip_address != info.ip_address:
@@ -852,9 +858,10 @@ class BaseUnit(Base[BaseUnitNaturalKey, _BaseUnitSerializeTD]):
         """Get the most recent :class:`BaseUnitOnlineStatus` for this BaseUnit, or None if no statuses exist
         """
         session = self._get_current_orm_session()
-        return session.query(BaseUnitOnlineStatus).where(
+        stmt = select(BaseUnitOnlineStatus).where(
             BaseUnitOnlineStatus.base_unit_id == self.id
-        ).order_by(BaseUnitOnlineStatus.timestamp.desc()).first()
+        ).order_by(BaseUnitOnlineStatus.timestamp.desc()).limit(1)
+        return session.execute(stmt).scalar_one_or_none()
 
     def set_online_status(
         self,
@@ -905,10 +912,12 @@ class BaseUnit(Base[BaseUnitNaturalKey, _BaseUnitSerializeTD]):
         )
         dt_sensor_keys = set((timezone.ensure_aware(r.timestamp), r.sensor) for r in temperature_history_data.readings)
 
-        existing_readings = session.query(SensorReading).filter(
-            SensorReading.base_unit_id == self.id,
-            tuple_(SensorReading.timestamp, SensorReading.sensor_type).in_(dt_sensor_keys),
-        ).all()
+        existing_readings = session.execute(
+            select(SensorReading).where(
+                SensorReading.base_unit_id == self.id,
+                tuple_(SensorReading.timestamp, SensorReading.sensor_type).in_(dt_sensor_keys),
+            )
+        ).scalars().all()
         existing_keys = set((r.timestamp, r.sensor_type) for r in existing_readings)
         click_secho(f"Fetched {len(temperature_history_data.readings)} sensor readings for BaseUnit '{self.hostname}'", fg="blue")
         num_added = 0
@@ -933,10 +942,12 @@ class BaseUnit(Base[BaseUnitNaturalKey, _BaseUnitSerializeTD]):
                 were added and how many were skipped due to already existing in the database.
         """
         dt_sensor_keys = set((timezone.ensure_aware(r.timestamp), r.sensor) for r in readings)
-        existing_readings = session.query(SensorReading).filter(
-            SensorReading.base_unit_id == self.id,
-            tuple_(SensorReading.timestamp, SensorReading.sensor_type).in_(dt_sensor_keys),
-        ).all()
+        existing_readings = session.execute(
+            select(SensorReading).where(
+                SensorReading.base_unit_id == self.id,
+                tuple_(SensorReading.timestamp, SensorReading.sensor_type).in_(dt_sensor_keys),
+            )
+        ).scalars().all()
         existing_keys = set((r.timestamp, r.sensor_type) for r in existing_readings)
         num_added = 0
         num_skipped = 0
@@ -964,11 +975,13 @@ class BaseUnit(Base[BaseUnitNaturalKey, _BaseUnitSerializeTD]):
         already exists in the database.
         """
         timestamp = timezone.ensure_aware(reading.timestamp)
-        existing_reading = session.query(SensorReading).where(
-            SensorReading.base_unit_id == self.id,
-            SensorReading.timestamp == timestamp,
-            SensorReading.sensor_type == reading.sensor,
-        ).one_or_none()
+        existing_reading = session.execute(
+            select(SensorReading).where(
+                SensorReading.base_unit_id == self.id,
+                SensorReading.timestamp == timestamp,
+                SensorReading.sensor_type == reading.sensor,
+            )
+        ).scalars().one_or_none()
         return existing_reading is not None
 
     def select_sensor_readings(
