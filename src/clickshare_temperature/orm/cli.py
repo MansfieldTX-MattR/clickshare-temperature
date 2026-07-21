@@ -1020,7 +1020,7 @@ def backfill_influx(
         upload_baseunit_online_statuses,
     )
 
-    def iter_select_chunks[T: tuple](select: Select[T], chunk_size: int) -> Iterator[Select[T]]:
+    def iter_select_chunks[T](select: Select[tuple[T]], chunk_size: int) -> Iterator[Select[tuple[T]]]:
         """Generic iterator to yield chunks of a SQLAlchemy select statement"""
         count = get_count_for_select(select, session=session)
         if count <= chunk_size:
