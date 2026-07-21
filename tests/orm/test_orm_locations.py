@@ -698,7 +698,7 @@ def test_location_model_baseunit_assignment_deletion(
 
         def gather_leaf_locations() -> Iterator[models.Location]:
             """Helper function to gather leaf locations in the hierarchy for individual deletion"""
-            for location in db_session.query(models.Location).all():
+            for location in models.Location.get_scalars_all(db_session):
                 if not location.child_locations:
                     yield location
 

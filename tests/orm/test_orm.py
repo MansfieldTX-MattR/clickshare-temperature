@@ -239,6 +239,24 @@ def test_db_is_uninitialized(uninitialized_db):
             _ = session.query(BaseUnitModel).first()
 
 
+def test_get_scalars_all(
+    fully_populated_db_data: FullyPopulatedDBData,
+    fully_populated_db_session: Session,
+) -> None:
+    """Test `Base.get_scalars_all` method
+    """
+    db_session = fully_populated_db_session
+
+    power_statuses = PowerManagementStatusModel.get_scalars_all(db_session)
+    assert len(power_statuses) == len(fully_populated_db_data.power_management_responses)
+
+    bu_statuses = BaseUnitStatusModel.get_scalars_all(db_session)
+    assert len(bu_statuses) == len(fully_populated_db_data.base_unit_statuses)
+
+    usage_statuses = BaseUnitUsageStatusModel.get_scalars_all(db_session)
+    assert len(usage_statuses) == len(fully_populated_db_data.base_unit_usage_statuses)
+
+
 def test_base_unit_get_by_hostname(
     db_session: Session,
     sample_base_unit_info: BaseUnitInfo,

@@ -321,7 +321,7 @@ def list_baseunits(ctx: click_extra.Context, ctx_obj: CLIDbContext) -> None:
     header = ("Room Name", "Hostname", "IP Address", "Location")
     data = []
     with get_db_session() as session:
-        base_units = session.query(BaseUnit).all()
+        base_units = BaseUnit.get_scalars_all(session)
         if len(base_units) == 0:
             click_secho("No BaseUnits found.", fg="yellow")
             return
@@ -666,7 +666,7 @@ def update_baseunit_info(ctx_obj: CLIDbContext) -> None:
     async def update_all_baseunit_infos() -> None:
         async with create_aiohttp_session(**session_options) as aiohttp_session:
             with get_db_session() as session:
-                base_units = session.query(BaseUnit).all()
+                base_units = BaseUnit.get_scalars_all(session)
                 if len(base_units) == 0:
                     click_secho("No BaseUnits found.", fg="yellow")
                     return
@@ -737,7 +737,7 @@ def update_power_management_info(ctx_obj: CLIDbContext) -> None:
     async def update_all_power_management_infos() -> None:
         async with create_aiohttp_session(**session_options) as aiohttp_session:
             with get_db_session() as session:
-                base_units = session.query(BaseUnit).all()
+                base_units = BaseUnit.get_scalars_all(session)
                 if len(base_units) == 0:
                     click_secho("No BaseUnits found.", fg="yellow")
                     return
@@ -790,7 +790,7 @@ def update_statuses(ctx_obj: CLIDbContext, usage_only: bool) -> None:
     async def update_all_statuses() -> None:
         async with create_aiohttp_session(**session_options) as aiohttp_session:
             with get_db_session() as session:
-                base_units = session.query(BaseUnit).all()
+                base_units = BaseUnit.get_scalars_all(session)
                 if len(base_units) == 0:
                     click_secho("No BaseUnits found.", fg="yellow")
                     return
@@ -877,7 +877,7 @@ def get_online_statuses_for_influx_backfill(
         now = timezone.utcnow()
 
     last_online_status_ids: set[int] = set()
-    for base_unit in session.query(BaseUnit).all():
+    for base_unit in BaseUnit.get_scalars_all(session):
         last_status = base_unit.last_online_status_instance()
         if last_status is not None and last_status.id is not None:
             last_online_status_ids.add(last_status.id)
