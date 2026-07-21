@@ -468,7 +468,7 @@ class Location(Base[LocationNaturalKey, _LocationSerializeTD]):
         """Check whether this Location is the first child of its parent location
         """
         if self.parent_location is None:
-            stmt = self.select_root_locations()
+            stmt = self.select_root_locations().order_by(self.__class__.id)
             sibling_count = get_count_for_select(stmt, session=session)
             if sibling_count == 0:
                 return True
@@ -482,7 +482,7 @@ class Location(Base[LocationNaturalKey, _LocationSerializeTD]):
         """Check whether this Location is the last child of its parent location
         """
         if self.parent_location is None:
-            stmt = self.select_root_locations()
+            stmt = self.select_root_locations().order_by(self.__class__.id)
             sibling_count = get_count_for_select(session=session, select_stmt=stmt)
             if sibling_count == 0:
                 return True
