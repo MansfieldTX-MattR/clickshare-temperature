@@ -2,12 +2,12 @@ from __future__ import annotations
 
 
 from sqlalchemy.orm import Session
-from sqlalchemy.sql.expression import Select, CompoundSelect
+from sqlalchemy.sql.expression import SelectBase
 from sqlalchemy import func, select
 
 
 
-def get_count_for_select(select_stmt: Select | CompoundSelect, session: Session) -> int:
+def get_count_for_select(select_stmt: SelectBase, session: Session) -> int:
     """Get the count of rows for a given select statement
 
     Arguments:

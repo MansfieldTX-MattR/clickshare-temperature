@@ -854,7 +854,7 @@ def get_online_statuses_for_influx_backfill(
     time_series_window: datetime.timedelta = datetime.timedelta(hours=1),
     now: datetime.datetime|None = None,
 ) -> Select[tuple[BaseUnitOnlineStatus]]:
-    """Build a query selecting BaseUnitOnlineStatus rows requiring Influx backfill
+    """Build a select statement containing BaseUnitOnlineStatus rows requiring Influx backfill
 
     Selection includes either:
 
@@ -862,7 +862,7 @@ def get_online_statuses_for_influx_backfill(
     2. The latest status per BaseUnit when its last upload is missing or stale.
 
     Arguments:
-        session: The database session to use for the query
+        session: The database session to use for querying.
         time_series_window: A :class:`datetime.timedelta` representing the maximum
             allowed age of the last upload for a status to be considered "fresh".
         now: The current time to use when determining if the last upload is stale.
@@ -936,15 +936,15 @@ def fetch_readings_bulk(
     async def fetch_all() -> None:
         async with create_aiohttp_session(**session_options) as aiohttp_session:
             with get_db_session() as orm_session:
-                base_unit_query = orm_session.query(BaseUnit)
+                base_unit_select = select(BaseUnit)
                 if baseunit_ips is not None:
-                    base_unit_query = base_unit_query.filter(BaseUnit.ip_address.in_(baseunit_ips))
+                    base_unit_select = base_unit_select.filter(BaseUnit.ip_address.in_(baseunit_ips))
                 status_coros = [
                     update_baseunit_status(
                         base_unit, ctx_obj.auth_info, model_cls, orm_session,
                         aiohttp_session, request_options,
                     )
-                    for base_unit in base_unit_query.all()
+                    for base_unit in orm_session.execute(base_unit_select).scalars()
                 ]
                 await asyncio.gather(*status_coros)
                 orm_session.commit()  # Commit status updates before fetching sensor readings
@@ -977,7 +977,7 @@ def fetch_readings_bulk(
                         base_unit.set_online_status(False)
 
                 fetch_coros = set()
-                for base_unit in base_unit_query.all():
+                for base_unit in orm_session.execute(base_unit_select).scalars():
                     if base_unit is None:
                         continue
                     assert base_unit.id is not None, "BaseUnit ID should not be None after commit"

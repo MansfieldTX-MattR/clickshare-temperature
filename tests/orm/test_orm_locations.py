@@ -21,6 +21,7 @@ from clickshare_temperature.orm.serialization import (
 )
 from clickshare_temperature.orm.cli import list_locations
 from clickshare_temperature.orm.types import LocationSiblingType
+from clickshare_temperature.orm.utils import get_count_for_select
 from clickshare_temperature.types import BaseUnitInfo
 
 from .conftest import _reset_engine
@@ -561,7 +562,8 @@ def test_location_model_deletion_with_descendants(
         models.Location.create_from_pathlist(*name_tuple, session=db_session)
     db_session.commit()
 
-    assert db_session.query(models.Location).count() == len(location_name_tree)
+    model_count = get_count_for_select(select(models.Location), session=db_session)
+    assert model_count == len(location_name_tree)
 
     for root_location in models.Location.get_root_locations(session=db_session):
         descendant_stmt = root_location.select_descendants()
@@ -575,7 +577,7 @@ def test_location_model_deletion_with_descendants(
         assert descendant_ids.isdisjoint(remaining_location_ids)
         assert root_location.id not in remaining_location_ids
 
-    assert db_session.query(models.Location).count() == 0
+    assert get_count_for_select(select(models.Location), session=db_session) == 0
 
 
 
@@ -715,9 +717,9 @@ def test_location_model_baseunit_assignment_deletion(
         db_session.commit()
 
     # Verify that all locations have been deleted and BaseUnits have no location
-    assert db_session.query(models.Location).count() == 0
-    assert db_session.query(models.BaseUnit).count() == len(all_base_units)
-    for base_unit in db_session.query(models.BaseUnit).all():
+    assert get_count_for_select(select(models.Location), session=db_session) == 0
+    assert get_count_for_select(select(models.BaseUnit), session=db_session) == len(all_base_units)
+    for base_unit in models.BaseUnit.get_scalars_all(db_session):
         assert base_unit.location is None
 
 
@@ -765,7 +767,7 @@ def test_location_model_serialization(
 
     assert new_db_session is not db_session
     db_session = new_db_session
-    assert db_session.query(models.Location).count() == 0
+    assert get_count_for_select(select(models.Location), session=db_session) == 0
 
     deserialize_database(db_session, serialized_db_json)
     for name_tuple, location_type_name in location_with_type_name.items():

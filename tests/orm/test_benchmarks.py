@@ -158,8 +158,8 @@ def teardown_and_create_new_db_session(
     new_db_session = get_session()
 
     assert new_db_session is not db_session
-    assert new_db_session.query(models.BaseUnit).count() == 0
-    assert new_db_session.query(models.SensorReading).count() == 0
+    assert get_count_for_select(select(models.BaseUnit), session=new_db_session) == 0
+    assert get_count_for_select(select(models.SensorReading), session=new_db_session) == 0
     return new_db_session
 
 

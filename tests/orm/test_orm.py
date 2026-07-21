@@ -4,6 +4,7 @@ import datetime
 from pathlib import Path
 import json
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import OperationalError, IntegrityError, NoResultFound
 
@@ -28,6 +29,7 @@ from clickshare_temperature.orm.serialization import (
     serialize_database,
     deserialize_database,
 )
+from clickshare_temperature.orm.utils import get_count_for_select
 from clickshare_temperature.orm.cli import get_online_statuses_for_influx_backfill
 from clickshare_temperature.temperature_history import TemperatureHistory, SensorReading
 from clickshare_temperature.types import (
@@ -236,7 +238,7 @@ def _populate_db_with_data(
 def test_db_is_uninitialized(uninitialized_db):
     with pytest.raises(OperationalError):
         with get_session() as session:
-            _ = session.query(BaseUnitModel).first()
+            _ = session.execute(select(BaseUnitModel)).scalars().first()
 
 
 def test_get_scalars_all(
@@ -305,7 +307,7 @@ def test_base_unit_model_unique_constraints(db_session):
 
 
 def test_base_unit_status_model_unique_constraints(
-    db_session,
+    db_session: Session,
     sample_base_unit_info: BaseUnitInfo,
     sample_base_unit_status: BaseUnitStatus
 ) -> None:
@@ -355,7 +357,7 @@ def test_base_unit_status_model_unique_constraints(
     db_session.rollback()
 
 
-def test_sensor_reading_unique_constraints(db_session, sample_base_unit_info: BaseUnitInfo) -> None:
+def test_sensor_reading_unique_constraints(db_session: Session, sample_base_unit_info: BaseUnitInfo) -> None:
     base_unit = BaseUnitModel(
         hostname=sample_base_unit_info.hostname,
         room_name=sample_base_unit_info.room_name,
@@ -395,7 +397,7 @@ def test_sensor_reading_unique_constraints(db_session, sample_base_unit_info: Ba
 
 
 def test_base_unit_from_info(
-    db_session,
+    db_session: Session,
     sample_base_unit_info: BaseUnitInfo
 ) -> None:
     base_unit = BaseUnitModel.from_info(sample_base_unit_info)
@@ -407,7 +409,7 @@ def test_base_unit_from_info(
     assert base_unit.ip_address == sample_base_unit_info.ip_address
 
 def test_base_unit_status_from_status(
-    db_session,
+    db_session: Session,
     sample_base_unit_info: BaseUnitInfo,
     sample_base_unit_status: BaseUnitStatus
 ) -> None:
@@ -419,9 +421,11 @@ def test_base_unit_status_from_status(
     db_session.add(status)
     db_session.commit()
 
-    status = db_session.query(BaseUnitStatusModel).where(
-        BaseUnitStatusModel.base_unit_id == base_unit.id
-    ).one()
+    status = db_session.execute(
+        select(BaseUnitStatusModel).where(
+            BaseUnitStatusModel.base_unit_id == base_unit.id
+        )
+    ).scalars().one()
 
     assert status.base_unit_id == base_unit.id
     assert status.current_uptime == int(sample_base_unit_status.current_uptime.total_seconds())
@@ -433,7 +437,7 @@ def test_base_unit_status_from_status(
 
 
 def test_sensor_reading_from_data(
-    db_session,
+    db_session: Session,
     sample_base_unit_info: BaseUnitInfo,
     sample_sensor_reading: SensorReading
 ) -> None:
@@ -473,7 +477,7 @@ def test_sensor_reading_to_reading(sample_sensor_reading_model: SensorReadingMod
 
 
 def test_base_unit_add_multiple_sensor_readings(
-    db_session,
+    db_session: Session,
     sample_base_unit_info: BaseUnitInfo,
     sample_temperature_history: TemperatureHistory
 ) -> None:
@@ -497,7 +501,7 @@ def test_base_unit_add_multiple_sensor_readings(
 
 
 def test_sensor_reading_round_trip(
-    db_session,
+    db_session: Session,
     sample_base_unit_info: BaseUnitInfo,
     sample_temperature_history_with_serialized_lines: tuple[TemperatureHistory, list[str]],
     tzinfo: datetime.tzinfo
@@ -819,9 +823,9 @@ def test_database_deserialization(
     db_session = new_db_session
 
     # Sanity check that the new database is empty before deserialization
-    assert db_session.query(BaseUnitModel).count() == 0
-    assert db_session.query(BaseUnitStatusModel).count() == 0
-    assert db_session.query(SensorReadingModel).count() == 0
+    assert get_count_for_select(select(BaseUnitModel), session=db_session) == 0
+    assert get_count_for_select(select(BaseUnitStatusModel), session=db_session) == 0
+    assert get_count_for_select(select(SensorReadingModel), session=db_session) == 0
 
     src_data = fully_populated_db_data
     deserialize_database(db_session, serialized_db_json)
@@ -868,9 +872,9 @@ def test_database_deserialization_legacy_list_format(
     db_session = new_db_session
 
     # Sanity check that the new database is empty before deserialization
-    assert db_session.query(BaseUnitModel).count() == 0
-    assert db_session.query(BaseUnitStatusModel).count() == 0
-    assert db_session.query(SensorReadingModel).count() == 0
+    assert get_count_for_select(select(BaseUnitModel), session=db_session) == 0
+    assert get_count_for_select(select(BaseUnitStatusModel), session=db_session) == 0
+    assert get_count_for_select(select(SensorReadingModel), session=db_session) == 0
 
     src_data = fully_populated_db_data
     deserialize_database(db_session, legacy_db_json)
@@ -905,20 +909,24 @@ def check_fully_populated_db_data(src_data: FullyPopulatedDBData, db_session: Se
     assert len(base_unit.power_management_statuses) == len(src_data.power_management_responses)
 
     for power_status_data, power_status_timestamp in src_data.power_management_responses:
-        power_status_model = db_session.query(PowerManagementStatusModel).where(
-            PowerManagementStatusModel.base_unit_id == base_unit.id,
-            PowerManagementStatusModel.timestamp == power_status_timestamp,
-        ).one()
+        power_status_model = db_session.execute(
+            select(PowerManagementStatusModel).where(
+                PowerManagementStatusModel.base_unit_id == base_unit.id,
+                PowerManagementStatusModel.timestamp == power_status_timestamp,
+            )
+        ).scalar_one()
         assert power_status_model.power_mode_status == power_status_data.status
         assert power_status_model.timestamp == power_status_timestamp
 
     assert len(base_unit.statuses) == len(src_data.base_unit_statuses)
 
     for status_data, status_timestamp in src_data.base_unit_statuses:
-        status_model = db_session.query(BaseUnitStatusModel).where(
-            BaseUnitStatusModel.base_unit_id == base_unit.id,
-            BaseUnitStatusModel.timestamp == status_timestamp,
-        ).one()
+        status_model = db_session.execute(
+            select(BaseUnitStatusModel).where(
+                BaseUnitStatusModel.base_unit_id == base_unit.id,
+                BaseUnitStatusModel.timestamp == status_timestamp,
+            )
+        ).scalar_one()
         assert status_model.base_unit_id == base_unit.id
         assert status_model.current_uptime == int(status_data.current_uptime.total_seconds())
         assert status_model.total_uptime == int(status_data.total_uptime.total_seconds())
@@ -929,10 +937,12 @@ def check_fully_populated_db_data(src_data: FullyPopulatedDBData, db_session: Se
 
     assert len(base_unit.usage_statuses) == len(src_data.base_unit_usage_statuses)
     for usage_status_data, usage_status_timestamp in src_data.base_unit_usage_statuses:
-        usage_status_model = db_session.query(BaseUnitUsageStatusModel).where(
-            BaseUnitUsageStatusModel.base_unit_id == base_unit.id,
-            BaseUnitUsageStatusModel.timestamp == usage_status_timestamp,
-        ).one()
+        usage_status_model = db_session.execute(
+            select(BaseUnitUsageStatusModel).where(
+                BaseUnitUsageStatusModel.base_unit_id == base_unit.id,
+                BaseUnitUsageStatusModel.timestamp == usage_status_timestamp,
+            )
+        ).scalar_one()
         assert usage_status_model.in_use == usage_status_data.in_use
         assert usage_status_model.sharing == usage_status_data.sharing
         assert usage_status_model.timestamp == usage_status_timestamp
@@ -940,11 +950,13 @@ def check_fully_populated_db_data(src_data: FullyPopulatedDBData, db_session: Se
     readings = base_unit.sensor_readings
     assert len(readings) == len(src_data.temperature_history.readings)
     for reading_data in src_data.temperature_history.readings:
-        reading_model = db_session.query(SensorReadingModel).where(
-            SensorReadingModel.timestamp == reading_data.timestamp,
-            SensorReadingModel.sensor_type == reading_data.sensor,
-            SensorReadingModel.base_unit_id == base_unit.id,
-        ).one()
+        reading_model = db_session.execute(
+            select(SensorReadingModel).where(
+                SensorReadingModel.timestamp == reading_data.timestamp,
+                SensorReadingModel.sensor_type == reading_data.sensor,
+                SensorReadingModel.base_unit_id == base_unit.id,
+            )
+        ).scalar_one()
         assert reading_model.value == reading_data.value
         assert reading_model.to_data() == reading_data
 
