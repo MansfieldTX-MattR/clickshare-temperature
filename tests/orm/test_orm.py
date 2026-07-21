@@ -5,7 +5,7 @@ from pathlib import Path
 import json
 
 from sqlalchemy.orm import Session
-from sqlalchemy.exc import OperationalError, IntegrityError
+from sqlalchemy.exc import OperationalError, IntegrityError, NoResultFound
 
 from clickshare_temperature.orm import (
     set_engine_uri,
@@ -238,6 +238,26 @@ def test_db_is_uninitialized(uninitialized_db):
         with get_session() as session:
             _ = session.query(BaseUnitModel).first()
 
+
+def test_base_unit_get_by_hostname(
+    db_session: Session,
+    sample_base_unit_info: BaseUnitInfo,
+    sample_base_unit_model: BaseUnitModel,
+) -> None:
+    """Test the `get_by_hostname` method and ensure its exceptions are raised
+    as expected
+    """
+    retrieved = BaseUnitModel.get_by_hostname(
+        sample_base_unit_info.hostname, session=db_session,
+    )
+    assert retrieved is not None
+    retrieved_2 = BaseUnitModel.get_by_hostname(
+        sample_base_unit_info.hostname, session=db_session, raise_if_absent=True
+    )
+    assert retrieved_2 is retrieved is sample_base_unit_model
+
+    with pytest.raises(NoResultFound):
+        BaseUnitModel.get_by_hostname("abcdef", session=db_session, raise_if_absent=True)
 
 
 def test_base_unit_model_unique_constraints(db_session):

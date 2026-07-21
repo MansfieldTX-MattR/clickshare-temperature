@@ -746,6 +746,37 @@ class BaseUnit(Base[BaseUnitNaturalKey, _BaseUnitSerializeTD]):
             room_name=info.room_name,
         )
 
+    @overload
+    @classmethod
+    def get_by_hostname(cls, hostname: str, session: Session, raise_if_absent: Literal[True]) -> Self:
+        ...
+    @overload
+    @classmethod
+    def get_by_hostname(cls, hostname: str, session: Session, raise_if_absent: Literal[False] = False) -> Self|None:
+        ...
+    @classmethod
+    def get_by_hostname(cls, hostname: str, session: Session, raise_if_absent: bool = False) -> Self|None:
+        """Get a BaseUnit by its hostname
+
+        Arguments:
+            hostname: The hostname of the BaseUnit to retrieve
+            session: The SQLAlchemy session to use for database operations
+            raise_if_absent: If True, raise a ValueError if no BaseUnit with the given hostname exists.
+                If False (the default), return None instead.
+
+        Returns:
+            The BaseUnit instance with the given hostname, or None if no such
+                BaseUnit exists (and *raise_if_absent* is False)
+
+        Raises:
+            sqlalchemy.exc.NoResultFound: If no BaseUnit with the given hostname
+                exists and *raise_if_absent* is True
+        """
+        stmt = select(cls).where(cls.hostname == hostname)
+        if raise_if_absent:
+            return session.execute(stmt).scalar_one()
+        return session.execute(stmt).scalar_one_or_none()
+
     @classmethod
     def get_or_create(cls, info: BaseUnitInfo, session: Session) -> tuple[Self, bool]:
         """Get a BaseUnit from the database matching the given :class:`.types.BaseUnitInfo`,

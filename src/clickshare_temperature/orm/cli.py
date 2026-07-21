@@ -208,9 +208,7 @@ def backfill_from_files(ctx_obj: CLIDbContext, directory: Path) -> None:
         for filepath in directory.glob("*.txt"):
             click_secho(f"Processing file {filepath}...", fg="blue")
             base_unit_info = get_baseunit_from_filename(filepath)
-            base_unit = session.query(BaseUnit).where(
-                BaseUnit.hostname == base_unit_info.hostname
-            ).one_or_none()
+            base_unit = BaseUnit.get_by_hostname(base_unit_info.hostname, session=session)
             if base_unit is None:
                 base_unit = BaseUnit(
                     hostname=base_unit_info.hostname,
@@ -225,9 +223,7 @@ def backfill_from_files(ctx_obj: CLIDbContext, directory: Path) -> None:
         for filepath in directory.glob("*.txt"):
             click_secho(f"Processing file {filepath}...", fg="blue")
             base_unit_info = get_baseunit_from_filename(filepath)
-            base_unit = session.query(BaseUnit).where(
-                BaseUnit.hostname == base_unit_info.hostname
-            ).one()
+            base_unit = BaseUnit.get_by_hostname(base_unit_info.hostname, session=session, raise_if_absent=True)
             temperature_history = TemperatureHistory.deserialize_str(base_unit_info, filepath.read_text())
             num_added, num_skipped = base_unit.add_sensor_readings(temperature_history.readings, session)
             click_secho(
@@ -275,9 +271,7 @@ def add_baseunit(ctx_obj: CLIDbContext, base_unit_ips: tuple[str, ...]) -> None:
 
     with get_db_session() as session:
         for baseunit_info in base_unit_infos:
-            base_unit = session.query(BaseUnit).where(
-                BaseUnit.hostname == baseunit_info.hostname
-            ).one_or_none()
+            base_unit = BaseUnit.get_by_hostname(baseunit_info.hostname, session=session)
             if base_unit is not None:
                 if base_unit.room_name != baseunit_info.room_name or base_unit.ip_address != baseunit_info.ip_address:
                     confirm_msg = '\n'.join([
@@ -544,7 +538,7 @@ def assign_baseunit_location(
         header_keys = list(header_keys) + [key for key in required_keys if key not in header_keys]
 
     with get_db_session() as session:
-        base_unit = session.query(BaseUnit).where(BaseUnit.hostname == baseunit_hostname).one_or_none()
+        base_unit = BaseUnit.get_by_hostname(baseunit_hostname, session=session)
         if base_unit is None:
             click_secho(f"BaseUnit with hostname '{baseunit_hostname}' not found, aborting", fg="red")
             raise click.Abort()
@@ -605,7 +599,7 @@ def assign_baseunit_location(
 def unassign_baseunit_location(ctx_obj: CLIDbContext, baseunit_hostname: str) -> None:
     """Unassign the Location from a BaseUnit."""
     with get_db_session() as session:
-        base_unit = session.query(BaseUnit).where(BaseUnit.hostname == baseunit_hostname).one_or_none()
+        base_unit = BaseUnit.get_by_hostname(baseunit_hostname, session=session)
         if base_unit is None:
             click_secho(f"BaseUnit with hostname '{baseunit_hostname}' not found, aborting", fg="red")
             raise click.Abort()
@@ -1138,9 +1132,9 @@ def backfill_influx(
         upload_baseunit_online_statuses(
             status_args,
             tags_callback=lambda base_unit_info: get_extra_tags_for_baseunit(
-                session.query(BaseUnit).where(
-                    BaseUnit.hostname == base_unit_info.hostname
-                ).one(),
+                BaseUnit.get_by_hostname(
+                    base_unit_info.hostname, session=session, raise_if_absent=True,
+                ),
                 session=session,
             ),
         )
@@ -1172,9 +1166,9 @@ def backfill_influx(
             upload_baseunit_status(
                 [(s.to_data(), s.timestamp) for s in statuses],
                 tags_callback=lambda status_data: get_extra_tags_for_baseunit(
-                    session.query(BaseUnit).where(
-                        BaseUnit.hostname == status_data.base_unit.hostname
-                    ).one(),
+                    BaseUnit.get_by_hostname(
+                        status_data.base_unit.hostname, session=session, raise_if_absent=True,
+                    ),
                     session=session,
                 ),
             )
@@ -1220,9 +1214,9 @@ def backfill_influx(
             upload_power_management_statuses(
                 power_status_args,
                 tags_callback=lambda base_unit_info: get_extra_tags_for_baseunit(
-                    session.query(BaseUnit).where(
-                        BaseUnit.hostname == base_unit_info.hostname
-                    ).one(),
+                    BaseUnit.get_by_hostname(
+                        base_unit_info.hostname, session=session, raise_if_absent=True,
+                    ),
                     session=session,
                 ),
             )
