@@ -1021,18 +1021,17 @@ def backfill_influx(
     )
 
     def iter_select_chunks[T](select: Select[tuple[T]], chunk_size: int) -> Iterator[Select[tuple[T]]]:
-        """Generic iterator to yield chunks of a SQLAlchemy select statement"""
-        count = get_count_for_select(select, session=session)
-        if count <= chunk_size:
-            yield select
-            return
-        offset = 0
+        """Generic iterator to yield chunks of a SQLAlchemy select statement
+
+        Assumes each yielded chunk is excluded from ``select`` (e.g. via an
+        updated status column that is committed) before the next chunk is
+        requested; otherwise this will loop forever.
+        """
         while True:
-            chunk = select.offset(offset).limit(chunk_size)
+            chunk = select.limit(chunk_size)
             if get_count_for_select(chunk, session=session) == 0:
                 break
             yield chunk
-            offset += chunk_size
 
     def get_earliest_backfill_time() -> datetime.datetime:
         now = timezone.utcnow()
