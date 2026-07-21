@@ -425,7 +425,7 @@ def test_base_unit_status_from_status(
         select(BaseUnitStatusModel).where(
             BaseUnitStatusModel.base_unit_id == base_unit.id
         )
-    ).scalars().one()
+    ).scalar_one()
 
     assert status.base_unit_id == base_unit.id
     assert status.current_uptime == int(sample_base_unit_status.current_uptime.total_seconds())
