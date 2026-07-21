@@ -5,7 +5,7 @@ from pathlib import Path
 
 from sqlalchemy import select, delete
 from sqlalchemy.orm import Session
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, NoResultFound
 from click_extra.testing import CliRunner
 
 from clickshare_temperature.orm import (
@@ -403,6 +403,23 @@ def test_location_model_get_by_location_type(
             assert location.location_type.name == location_type_name
             assert location.pathlist in pathlists
 
+
+def test_location_model_get_by_id(db_session: Session) -> None:
+    """Test `get_by_id` method and ensure its exceptions are raised as excpected
+    """
+    location_0 = models.Location(name="foo")
+    db_session.add(location_0)
+    db_session.commit()
+
+    location_1 = models.Location.get_by_id(location_0.id, session=db_session)
+    assert location_1 is not None
+
+    location_2 = models.Location.get_by_id(location_0.id, session=db_session, raise_if_absent=True)
+
+    assert location_0 is location_1 is location_2
+
+    with pytest.raises(NoResultFound):
+        models.Location.get_by_id(location_0.id + 1, session=db_session, raise_if_absent=True)
 
 
 def test_location_model_hierarchy(

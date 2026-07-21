@@ -313,6 +313,35 @@ class Location(Base[LocationNaturalKey, _LocationSerializeTD]):
         """
         return tuple(part for part in path.split(cls.PATH_DELIMITER))
 
+    @overload
+    @classmethod
+    def get_by_id(cls, location_id: int, session: Session, raise_if_absent: Literal[True]) -> Self:
+        ...
+    @overload
+    @classmethod
+    def get_by_id(cls, location_id: int, session: Session, raise_if_absent: Literal[False] = False) -> Self|None:
+        ...
+    @classmethod
+    def get_by_id(cls, location_id: int, session: Session, raise_if_absent: bool = False) -> Self|None:
+        """Get a Location by its ID
+
+        Arguments:
+            location_id: The ID of the Location to get
+            session: The SQLAlchemy session to use for database operations
+            raise_if_absent: Whether to raise an exception if no Location with the given ID is found
+
+        Returns:
+            The Location instance with the given ID, or None if no such Location exists
+                and ``raise_if_absent`` is False
+
+        Raises:
+            sqlalchemy.exc.NoResultFound: If no Location with the given ID
+                exists and *raise_if_absent* is True
+        """
+        if raise_if_absent:
+            return session.query(cls).where(cls.id == location_id).one()
+        return session.query(cls).where(cls.id == location_id).one_or_none()
+
     @classmethod
     def get_by_location_type(cls, location_type: LocationType|str, session: Session) -> list[Self]:
         """Get a list of Location instances that have the given location type

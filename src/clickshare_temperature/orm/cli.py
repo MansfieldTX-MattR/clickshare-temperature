@@ -403,7 +403,7 @@ def add_location(
     with get_db_session() as session:
         parent_location = None
         if parent_id is not None:
-            parent_location = session.query(Location).where(Location.id == parent_id).one_or_none()
+            parent_location = Location.get_by_id(parent_id, session=session)
             if parent_location is None:
                 click_secho(f"Parent location with ID {parent_id} not found, aborting", fg="red")
                 raise click.Abort()
@@ -458,7 +458,7 @@ def set_location_type(
                 raise click.Abort()
             location_id = location_row.id
 
-        location = session.query(Location).where(Location.id == location_id).one_or_none()
+        location = Location.get_by_id(location_id, session=session)
         if location is None:
             click_secho(f"Location with ID {location_id} not found, aborting", fg="red")
             raise click.Abort()
@@ -479,7 +479,7 @@ def set_location_type(
 def delete_location(ctx_obj: CLIDbContext, location_id: int) -> None:
     """Delete a Location from the database. Child locations will also be deleted."""
     with get_db_session() as session:
-        location = session.query(Location).where(Location.id == location_id).one_or_none()
+        location = Location.get_by_id(location_id, session=session)
         if location is None:
             click_secho(f"Location with ID {location_id} not found, aborting", fg="red")
             raise click.Abort()
@@ -567,7 +567,7 @@ def assign_baseunit_location(
                 raise click.Abort()
             location_id = location_row.id
 
-        location = session.query(Location).where(Location.id == location_id).one_or_none()
+        location = Location.get_by_id(location_id, session=session)
         if location is None:
             click_secho(f"Location with ID {location_id} not found, aborting", fg="red")
             raise click.Abort()
