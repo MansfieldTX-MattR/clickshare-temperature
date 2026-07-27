@@ -1,14 +1,16 @@
 from __future__ import annotations
-from typing import Literal, Unpack, Any, TYPE_CHECKING
+
 from pathlib import Path
+from typing import TYPE_CHECKING, Any, Literal, Unpack
 
 import click
-from yarl import URL
 from aiohttp import ClientTimeout
 from aiohttp.helpers import _SENTINEL, sentinel
+from yarl import URL
 
-from .types import BaseUnitInfo, AioHttpRequestOptions
 from .baseunit_api import DEFAULT_REQUEST_OPTIONS
+from .types import AioHttpRequestOptions, BaseUnitInfo
+
 if TYPE_CHECKING:
     from .cli import OutputFormat
 
@@ -109,7 +111,7 @@ def is_valid_ip_or_hostname(value: str) -> bool:
 
 
 def build_aiohttp_request_options(
-    timeout_seconds: int|float|None|_SENTINEL = sentinel,
+    timeout_seconds: float | None | _SENTINEL = sentinel,
     **kwargs: Unpack[AioHttpRequestOptions]
 ) -> AioHttpRequestOptions:
     """Build a dictionary of options for aiohttp requests

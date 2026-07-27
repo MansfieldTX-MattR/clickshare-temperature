@@ -1,16 +1,24 @@
 from __future__ import annotations
-from typing import (
-    Literal, Sequence, Self, NamedTuple, TypedDict, NotRequired,
-    get_args, TYPE_CHECKING,
-)
+
 import datetime
+from collections.abc import Sequence
+from typing import (
+    TYPE_CHECKING,
+    Literal,
+    NamedTuple,
+    NotRequired,
+    Self,
+    TypedDict,
+    get_args,
+)
 
 if TYPE_CHECKING:
     from ssl import SSLContext
-    from aiohttp import BasicAuth, BaseConnector, ClientTimeout
-    from aiohttp.helpers import _SENTINEL
-    from aiohttp.client_reqrep import Fingerprint
+
+    from aiohttp import BaseConnector, BasicAuth, ClientTimeout
     from aiohttp.client_middlewares import ClientMiddlewareType
+    from aiohttp.client_reqrep import Fingerprint
+    from aiohttp.helpers import _SENTINEL
     from aiohttp.typedefs import LooseCookies, LooseHeaders, StrOrURL
 
 

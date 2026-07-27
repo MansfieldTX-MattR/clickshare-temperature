@@ -1,29 +1,34 @@
 from __future__ import annotations
+
 import asyncio
+import datetime
+from collections.abc import AsyncGenerator, Awaitable, Callable
+from contextlib import asynccontextmanager
 from typing import (
-    Literal, Awaitable, Unpack, Callable, Any, AsyncGenerator, TypedDict,
+    Any,
+    Literal,
+    TypedDict,
+    Unpack,
     overload,
 )
-from contextlib import asynccontextmanager
-import datetime
 
-from aiohttp import ClientSession, ClientTimeout, BasicAuth, ClientResponse
+from aiohttp import BasicAuth, ClientResponse, ClientSession, ClientTimeout
 from yarl import URL
 
-from .types import (
-    BaseUnitInfo,
-    BaseUnitIdentity,
-    BaseUnitStatus,
-    AuthInfo,
-    PowerModeStatus,
-    PowerMode,
-    PowerStandbyTimeout,
-    PowerManagementInfo,
-    AioHttpSessionOptions,
-    AioHttpRequestOptions,
-    BaseUnitStatusErrorCode,
-)
 from . import timezone
+from .types import (
+    AioHttpRequestOptions,
+    AioHttpSessionOptions,
+    AuthInfo,
+    BaseUnitIdentity,
+    BaseUnitInfo,
+    BaseUnitStatus,
+    BaseUnitStatusErrorCode,
+    PowerManagementInfo,
+    PowerMode,
+    PowerModeStatus,
+    PowerStandbyTimeout,
+)
 
 DEFAULT_REQUEST_OPTIONS: AioHttpRequestOptions = {
     "ssl": False,
@@ -64,7 +69,7 @@ async def api_request(
     session: ClientSession|None = None,
     session_options: AioHttpSessionOptions|None = None,
     **request_options: Unpack[AioHttpRequestOptions],
-) -> AsyncGenerator[ClientResponse, None]:
+) -> AsyncGenerator[ClientResponse]:
     """Make an API request to the BaseUnit."""
     url = get_baseunit_api_url(baseunit_ip) / api_path
     if auth_info is not None:

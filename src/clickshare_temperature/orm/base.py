@@ -1,27 +1,26 @@
 from __future__ import annotations
-from typing import Sequence, Self, Any
-from abc import abstractmethod
+
 import datetime
 import enum
+from abc import abstractmethod
+from collections.abc import Sequence
+from typing import Any, ClassVar, Self
 
 import sqlalchemy
+from sqlalchemy import Float, Select, String, inspect, select
 from sqlalchemy.orm import (
-    Session,
     DeclarativeBase,
+    Session,
 )
-from sqlalchemy import inspect, select
-from sqlalchemy import String, Float, Select
 from sqlalchemy_utc import UtcDateTime
 
 from ..types import LogLevel, SensorType
-from .types import FullySerializedModelTD, DeserializationError, _BaseModelSerializeTD
-
-
+from .types import DeserializationError, FullySerializedModelTD, _BaseModelSerializeTD
 
 
 class Base[NaturalKeyType, SerializeType: (_BaseModelSerializeTD[Any])](DeclarativeBase):
     """Base class for SQLAlchemy ORM models."""
-    type_annotation_map = {
+    type_annotation_map: ClassVar[dict[Any, Any]] = {
         # int: BIGINT,
         str: String(),
         float: Float,

@@ -1,15 +1,15 @@
 from __future__ import annotations
-from typing import Literal, Iterator, Sequence, NamedTuple
 
-from sqlalchemy.orm import Session
+from collections.abc import Iterator, Sequence
+from typing import Literal, NamedTuple
+
 import click
 import click_extra
+from sqlalchemy.orm import Session
 
 from .models import Location
-from .utils import get_count_for_select
 from .types import LocationSiblingType
-
-
+from .utils import get_count_for_select
 
 
 class LocationTableRow(NamedTuple):
@@ -241,8 +241,7 @@ def get_location_table_data(session: Session) -> list[LocationTableRow]:
             yield from handle_location(child, parent=obj)
 
     for root_location in root_locations:
-        for row_data in handle_location(root_location):
-            data.append(row_data)
+        data.extend(handle_location(root_location))
     all_indices = [row.index_ for row in data]
     assert all_indices == list(range(len(data)))
     return data
