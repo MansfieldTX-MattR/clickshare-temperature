@@ -1824,7 +1824,18 @@ class SensorReading(Base[SensorReadingNaturalKey, _SensorReadingSerializeTD]):
 
 
 
-type ModelInstance = LocationType | Location | BaseUnit | BaseUnitOnlineStatus | BaseUnitStatus | BaseUnitUsageStatus | SensorReading | BaseUnitIdentity | PowerManagementSettings | PowerManagementStatus
+type ModelInstance = (
+    LocationType
+    | Location
+    | BaseUnit
+    | BaseUnitOnlineStatus
+    | BaseUnitStatus
+    | BaseUnitUsageStatus
+    | SensorReading
+    | BaseUnitIdentity
+    | PowerManagementSettings
+    | PowerManagementStatus
+)
 type ModelClass = type[ModelInstance]
 type ModelTableName = Literal[
     "location_types",
