@@ -1,5 +1,6 @@
 from __future__ import annotations
-from typing import Literal, TypedDict, NamedTuple, TypeIs, Self, Any, TYPE_CHECKING
+
+from typing import TYPE_CHECKING, Any, Literal, NamedTuple, Self, TypedDict, TypeIs
 
 if TYPE_CHECKING:
     from .models import ModelTableName
@@ -24,7 +25,6 @@ with the same parent location.
 
 class DeserializationError(Exception):
     """Custom exception for errors during deserialization of ORM models."""
-    pass
 
 
 

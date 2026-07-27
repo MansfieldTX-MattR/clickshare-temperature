@@ -1,24 +1,26 @@
 from __future__ import annotations
-from typing import Literal
-import asyncio
-from pathlib import Path
-import json
 
-from dotenv import load_dotenv
-from aiohttp import ClientSession
+import asyncio
+import json
+from pathlib import Path
+from typing import Literal
+
 import click
 import click_extra
+from aiohttp import ClientSession
+from dotenv import load_dotenv
 
 from clickshare_temperature.types import AuthInfo
 
 from .baseunit_api import (
-    create_session,
-    get_baseunit_info,
     DEFAULT_REQUEST_OPTIONS,
     DEFAULT_SESSION_OPTIONS,
+    create_session,
+    get_baseunit_info,
 )
-from .temperature_history import TemperatureHistory
+from .click_extra_params import CLIRootContext, get_extra_params
 from .log_archive import LogArchive
+from .temperature_history import TemperatureHistory
 from .timezone import (
     LOCAL_TZ_ENV_VAR,
     NotFound,
@@ -28,12 +30,10 @@ from .timezone import (
 from .types import AioHttpRequestOptions, AioHttpSessionOptions
 from .utils import (
     ClickColor,
+    build_aiohttp_request_options,
     click_secho,
     get_output_file_for_baseunit,
-    build_aiohttp_request_options,
 )
-from .click_extra_params import get_extra_params, CLIRootContext
-
 
 orm_cli: None|click.Group
 try:
@@ -240,7 +240,7 @@ def cli_download(
     """Download logs from the BaseUnit and extract temperature readings."""
     if upload_influx and raw_logs:
         raise ValueError("Cannot use --upload-influx flag when --raw-logs flag is set, because raw logs cannot be parsed for temperature readings.")
-    obj, appended = asyncio.run(download(
+    obj, _appended = asyncio.run(download(
         baseunit_ip=baseunit_ip,
         auth_info=ctx_obj.auth_info,
         append_from=append_from,

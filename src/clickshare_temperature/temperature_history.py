@@ -1,28 +1,34 @@
 from __future__ import annotations
-from typing import NamedTuple, TypedDict, Unpack, Self
+
 import datetime
-from pathlib import Path
-from dataclasses import dataclass, field
 import re
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import NamedTuple, Self, TypedDict, Unpack
 
 from aiohttp import ClientSession
 
 from .baseunit_api import download_logs, get_baseunit_info
 from .log_archive import LogArchive, LogEntry, TmpDir
-from .utils import get_baseunit_from_filename
 from .types import (
-    SensorType, SensorTypes, AuthInfo, AioHttpSessionOptions, AioHttpRequestOptions,
-    BaseUnitInfo, BaseUnitInfoSerializeTD,
+    AioHttpRequestOptions,
+    AioHttpSessionOptions,
+    AuthInfo,
+    BaseUnitInfo,
+    BaseUnitInfoSerializeTD,
+    SensorType,
+    SensorTypes,
 )
+from .utils import get_baseunit_from_filename
 
 CPU_TEMP_PATTERN = re.compile(r"Sensor readout CPUTemperature = (\d+(?:\.\d+)?) C")
 WLAN_TEMP_PATTERN = re.compile(r"Temperature of (wlan\d): (\d+(?:\.\d+)?)")
 CPU_FAN_SPEED_PATTERN = re.compile(r"Sensor readout CPUFanSpeed = (\d+(?:\.\d+)?) RPM")
 
 
-class _SensorReadingSerializeTD[_T: SensorType](TypedDict):
+class _SensorReadingSerializeTD[T: SensorType](TypedDict):
     timestamp: str
-    sensor: _T
+    sensor: T
     value: float
 
 
@@ -60,7 +66,7 @@ class SensorReading[T: SensorType](NamedTuple):
         }
 
     @staticmethod
-    def deserialize[_T: SensorType](data: _SensorReadingSerializeTD[_T]) -> SensorReading[_T]:
+    def deserialize[SensorT: SensorType](data: _SensorReadingSerializeTD[SensorT]) -> SensorReading[SensorT]:
         """Deserialize a SensorReading from a dictionary."""
         timestamp = datetime.datetime.fromisoformat(data["timestamp"])
         sensor = data["sensor"]

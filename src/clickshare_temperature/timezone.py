@@ -1,14 +1,15 @@
 from __future__ import annotations
-from typing import Literal, overload
-import os
+
 import datetime
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
-import time
 import enum
+import os
+import time
+from typing import Literal, overload
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from dotenv import load_dotenv
 
-UTC = datetime.timezone.utc
+UTC = datetime.UTC
 LOCAL_TZ: datetime.tzinfo|NotFoundType|None = None
 LOCAL_TZ_ENV_VAR = "CLICKSHARE_LOCAL_TIMEZONE"
 """Environment variable name for specifying the local timezone name"""
@@ -25,11 +26,9 @@ NotFound: NotFoundType = _Sentinel.token
 
 class TimezoneError(Exception):
     """Custom exception for timezone-related errors."""
-    pass
 
 class TimezoneLookupError(TimezoneError):
     """Custom exception for timezone lookup errors."""
-    pass
 
 
 def detect_local_timezone() -> datetime.tzinfo:

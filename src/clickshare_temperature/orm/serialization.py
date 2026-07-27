@@ -4,21 +4,25 @@
 # used to iterate over the models and their fields are dynamic and cannot be easily
 # expressed with the parameters for `.types.FullySerializedModelTD`.
 from __future__ import annotations
-from typing import Iterator, Sequence, Literal, TypedDict, Mapping
+
 import json
+from collections.abc import Iterator, Mapping, Sequence
 from pathlib import Path
+from typing import Literal, TypedDict
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-
-from .types import FullySerializedModelTD, RelationshipNaturalKey, RelationshipNaturalKeyTD
 from .base import Base
 from .models import (
     MODEL_CLASSES,
     ModelTableName,
 )
-
+from .types import (
+    FullySerializedModelTD,
+    RelationshipNaturalKey,
+    RelationshipNaturalKeyTD,
+)
 
 SERIALIZATION_VERSION: Literal["1.0"] = "1.0"
 """The current version of the serialization format"""
@@ -86,7 +90,7 @@ def deserialize_all(
     # Pre-process the data to identify all relationship natural keys and
     # convert them to RelationshipNaturalKey objects before starting deserialization
     processed_data: dict[ModelTableName, list[FullySerializedModelTD]] = {}
-    for model_key in data["data"].keys():
+    for model_key in data["data"]:
         model_items = list(data["data"][model_key])
         processed_items: list[FullySerializedModelTD] = []
         for item in model_items:
