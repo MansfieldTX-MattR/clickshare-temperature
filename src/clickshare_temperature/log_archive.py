@@ -1,19 +1,27 @@
 from __future__ import annotations
-import io
-from typing import Self, NamedTuple, TypedDict, NotRequired, Iterator, Unpack, Any
-from pathlib import Path
-import tarfile
-import gzip
-import tempfile
-from dataclasses import dataclass, field
+
 import datetime
+import gzip
+import io
 import re
+import tarfile
+import tempfile
+import types
+from collections.abc import Iterator
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import NamedTuple, NotRequired, Self, TypedDict, Unpack
 
 from .baseunit_api import download_logs
-from .types import AuthInfo, LogLevel, LogLevels, AioHttpRequestOptions, AioHttpSessionOptions
+from .types import (
+    AioHttpRequestOptions,
+    AioHttpSessionOptions,
+    AuthInfo,
+    LogLevel,
+    LogLevels,
+)
 
-
-UTC = datetime.timezone.utc
+UTC = datetime.UTC
 
 LOG_LINE_PATTERN: re.Pattern[str] = re.compile(r"^(\S+) (\S+) (.*?):\s*(.*)$")
 PROCESS_PATTERN: re.Pattern[str] = re.compile(r"^(\S+?)(?:\[(\d*)\])?$")
@@ -57,7 +65,7 @@ class TmpDir:
         self,
         exc_type: type[BaseException]|None,
         exc_val: BaseException|None,
-        exc_tb: Any|None
+        exc_tb: types.TracebackType|None
     ) -> None:
         self.close()
 

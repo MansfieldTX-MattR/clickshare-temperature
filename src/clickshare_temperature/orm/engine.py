@@ -1,21 +1,35 @@
 from __future__ import annotations
-from typing import (
-    ClassVar, Protocol, Literal, TypedDict, NotRequired, Unpack, TYPE_CHECKING,
-)
+
 import threading
 import warnings
+from typing import (
+    TYPE_CHECKING,
+    ClassVar,
+    Literal,
+    NotRequired,
+    Protocol,
+    TypedDict,
+    Unpack,
+)
 
 from sqlalchemy import (
-    Engine,
     URL as SQLAlchemyURL,
-    make_url,
-    create_engine as sa_create_engine,
+)
+from sqlalchemy import (
+    Engine,
     event,
+    make_url,
+)
+from sqlalchemy import (
+    create_engine as sa_create_engine,
+)
+from sqlalchemy.orm import (
+    Session as ORMSession,
 )
 from sqlalchemy.orm import (
     sessionmaker,
-    Session as ORMSession,
 )
+
 if TYPE_CHECKING:
     from sqlalchemy.engine.interfaces import DBAPIConnection
     from sqlalchemy.pool.base import ConnectionPoolEntry

@@ -1,46 +1,58 @@
 from __future__ import annotations
-from typing import NewType, ClassVar, Union, Literal, Sequence, Self, overload
+
 import datetime
+from collections.abc import Sequence
+from typing import ClassVar, Literal, NewType, Self, overload
 
 from aiohttp import ClientSession
-from sqlalchemy.orm import Session
-
+from sqlalchemy import ForeignKey, Index, func, null, select, tuple_
 from sqlalchemy.orm import (
     Mapped,
+    Session,
+    aliased,
     mapped_column,
     relationship,
-    aliased,
 )
-from sqlalchemy.sql.expression import Select, CompoundSelect
-from sqlalchemy import ForeignKey, Index, func, select, tuple_, null
 from sqlalchemy.schema import UniqueConstraint
+from sqlalchemy.sql.expression import CompoundSelect, Select
 
-from .base import Base
-from ..types import (
-    AioHttpRequestOptions,
-    SensorType,
-    BaseUnitInfo,
-    BaseUnitIdentity as BaseUnitIdentityData,
-    PowerMode,
-    PowerModeStatus,
-    PowerManagementInfo,
-    AuthInfo,
-    BaseUnitStatusErrorCode,
-    BaseUnitStatus as BaseUnitStatusData,
-    BaseUnitUsageStatus as BaseUnitUsageStatusData,
-)
+from .. import timezone
 from ..baseunit_api import DEFAULT_REQUEST_OPTIONS
 from ..temperature_history import (
     SensorReading as SensorReadingData,
+)
+from ..temperature_history import (
     TemperatureHistory as TemperatureHistoryData,
 )
-from .. import timezone
 from ..timezone import ensure_aware
-from ..utils import click_secho
-from .utils import get_count_for_select
-from .types import (
-    Ordering, LocationSiblingType, RelationshipNaturalKey, _BaseModelSerializeTD,
+from ..types import (
+    AioHttpRequestOptions,
+    AuthInfo,
+    BaseUnitInfo,
+    BaseUnitStatusErrorCode,
+    PowerManagementInfo,
+    PowerMode,
+    PowerModeStatus,
+    SensorType,
 )
+from ..types import (
+    BaseUnitIdentity as BaseUnitIdentityData,
+)
+from ..types import (
+    BaseUnitStatus as BaseUnitStatusData,
+)
+from ..types import (
+    BaseUnitUsageStatus as BaseUnitUsageStatusData,
+)
+from ..utils import click_secho
+from .base import Base
+from .types import (
+    LocationSiblingType,
+    Ordering,
+    RelationshipNaturalKey,
+    _BaseModelSerializeTD,
+)
+from .utils import get_count_for_select
 
 DtIsoStr = NewType("DtIsoStr", str)
 
@@ -910,7 +922,10 @@ class BaseUnit(Base[BaseUnitNaturalKey, _BaseUnitSerializeTD]):
             session=aiohttp_session,
             **request_options,
         )
-        dt_sensor_keys = set((timezone.ensure_aware(r.timestamp), r.sensor) for r in temperature_history_data.readings)
+        dt_sensor_keys = {
+            (timezone.ensure_aware(r.timestamp), r.sensor)
+            for r in temperature_history_data.readings
+        }
 
         existing_readings = session.execute(
             select(SensorReading).where(
@@ -918,7 +933,7 @@ class BaseUnit(Base[BaseUnitNaturalKey, _BaseUnitSerializeTD]):
                 tuple_(SensorReading.timestamp, SensorReading.sensor_type).in_(dt_sensor_keys),
             )
         ).scalars().all()
-        existing_keys = set((r.timestamp, r.sensor_type) for r in existing_readings)
+        existing_keys = {(r.timestamp, r.sensor_type) for r in existing_readings}
         click_secho(f"Fetched {len(temperature_history_data.readings)} sensor readings for BaseUnit '{self.hostname}'", fg="blue")
         num_added = 0
         for reading in temperature_history_data.readings:
@@ -941,14 +956,17 @@ class BaseUnit(Base[BaseUnitNaturalKey, _BaseUnitSerializeTD]):
             A tuple of (num_added, num_skipped) indicating how many readings
                 were added and how many were skipped due to already existing in the database.
         """
-        dt_sensor_keys = set((timezone.ensure_aware(r.timestamp), r.sensor) for r in readings)
+        dt_sensor_keys = {
+            (timezone.ensure_aware(r.timestamp), r.sensor)
+            for r in readings
+        }
         existing_readings = session.execute(
             select(SensorReading).where(
                 SensorReading.base_unit_id == self.id,
                 tuple_(SensorReading.timestamp, SensorReading.sensor_type).in_(dt_sensor_keys),
             )
         ).scalars().all()
-        existing_keys = set((r.timestamp, r.sensor_type) for r in existing_readings)
+        existing_keys = {(r.timestamp, r.sensor_type) for r in existing_readings}
         num_added = 0
         num_skipped = 0
         for reading in readings:
@@ -1806,18 +1824,18 @@ class SensorReading(Base[SensorReadingNaturalKey, _SensorReadingSerializeTD]):
 
 
 
-type ModelInstance = Union[
-    LocationType,
-    Location,
-    BaseUnit,
-    BaseUnitOnlineStatus,
-    BaseUnitStatus,
-    BaseUnitUsageStatus,
-    SensorReading,
-    BaseUnitIdentity,
-    PowerManagementSettings,
-    PowerManagementStatus,
-]
+type ModelInstance = (
+    LocationType
+    | Location
+    | BaseUnit
+    | BaseUnitOnlineStatus
+    | BaseUnitStatus
+    | BaseUnitUsageStatus
+    | SensorReading
+    | BaseUnitIdentity
+    | PowerManagementSettings
+    | PowerManagementStatus
+)
 type ModelClass = type[ModelInstance]
 type ModelTableName = Literal[
     "location_types",

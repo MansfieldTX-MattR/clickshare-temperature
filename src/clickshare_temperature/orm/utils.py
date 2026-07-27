@@ -1,10 +1,8 @@
 from __future__ import annotations
 
-
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.expression import SelectBase
-from sqlalchemy import func, select
-
 
 
 def get_count_for_select(select_stmt: SelectBase, session: Session) -> int:

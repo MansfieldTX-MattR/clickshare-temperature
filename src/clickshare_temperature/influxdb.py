@@ -1,26 +1,35 @@
 from __future__ import annotations
-from typing import (
-    Literal, NamedTuple, Sequence, TypedDict, Iterable, Self, Callable, overload
-)
-from types import MappingProxyType, TracebackType
-import datetime
-import os
-from pathlib import Path
-import json
 
-from urllib3 import HTTPHeaderDict
-from dotenv import load_dotenv
-from influxdb_client_3 import InfluxDBClient3, Point as _Point, WritePrecision
-from influxdb_client_3.write_client.rest import ApiException as InfluxDBApiException
+import datetime
+import json
+import os
+from collections.abc import Callable, Iterable, Sequence
+from pathlib import Path
+from types import MappingProxyType, TracebackType
+from typing import (
+    Literal,
+    NamedTuple,
+    Self,
+    TypedDict,
+    overload,
+)
+
 import click
+from dotenv import load_dotenv
+from influxdb_client_3 import InfluxDBClient3, WritePrecision
+from influxdb_client_3 import Point as _Point
+from influxdb_client_3.write_client.rest import ApiException as InfluxDBApiException
+from urllib3 import HTTPHeaderDict
 
 from .temperature_history import SensorReading, TemperatureHistory
 from .types import (
-    BaseUnitInfo, BaseUnitStatus, BaseUnitUsageStatus, SensorType,
+    BaseUnitInfo,
+    BaseUnitStatus,
+    BaseUnitUsageStatus,
     PowerModeStatus,
+    SensorType,
 )
-from .utils import click_secho, get_baseunit_from_filename, get_app_dir
-
+from .utils import click_secho, get_app_dir, get_baseunit_from_filename
 
 load_dotenv()
 
@@ -48,7 +57,7 @@ class InfluxDBRateLimitExceededError(Exception):
         super().__init__(message)
         self.retry_after = retry_after
         if retry_after is not None:
-            self.retry_after_datetime = datetime.datetime.now() + datetime.timedelta(seconds=retry_after)
+            self.retry_after_datetime = datetime.datetime.now(datetime.UTC) + datetime.timedelta(seconds=retry_after)
         else:
             self.retry_after_datetime = None
 
@@ -636,7 +645,6 @@ def backfill_from_directory(directory: Path) -> None:
 @click.group(name="grafana")
 def cli() -> None:
     """CLI for managing ClickShare temperature data and Grafana backfilling."""
-    pass
 
 @cli.command(name="backfill")
 @click.argument("path", type=click.Path(exists=True, path_type=Path))

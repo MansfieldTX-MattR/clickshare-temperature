@@ -1,68 +1,74 @@
 from __future__ import annotations
-from typing import Callable, Sequence, Iterator, TYPE_CHECKING
+
 import asyncio
-import warnings
-from pathlib import Path
 import datetime
+import warnings
+from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass
+from pathlib import Path
+from typing import TYPE_CHECKING
 
 import click
 import click_extra
+
 # from yarl import URL
-from aiohttp import ClientSession, ClientError
-from sqlalchemy import create_mock_engine, select, and_, or_
-from sqlalchemy.sql.expression import Select
+from aiohttp import ClientError, ClientSession
+from sqlalchemy import and_, create_mock_engine, or_, select
 from sqlalchemy.orm import Session
+from sqlalchemy.sql.expression import Select
 
 if TYPE_CHECKING:
-    from sqlalchemy.sql.ddl import BaseDDLElement
     from sqlalchemy.engine.mock import MockConnection
+    from sqlalchemy.sql.ddl import BaseDDLElement
 
+from .. import timezone
+from ..baseunit_api import (
+    create_session as create_aiohttp_session,
+)
+from ..baseunit_api import (
+    get_baseunit_identity,
+    get_baseunit_info,
+    get_baseunit_status,
+    get_power_management_info,
+)
+from ..click_extra_params import CLIRootContext, get_extra_params
+from ..temperature_history import TemperatureHistory
 from ..types import (
+    AioHttpRequestOptions,
     AuthInfo,
     BaseUnitInfo,
     PowerModeStatus,
-    AioHttpRequestOptions,
 )
-from ..baseunit_api import (
-    create_session as create_aiohttp_session,
-    get_baseunit_info,
-    get_baseunit_status,
-    get_baseunit_identity,
-    get_power_management_info,
-)
-
+from ..utils import click_secho, get_baseunit_from_filename, is_valid_ip_or_hostname
 from .base import Base
 from .engine import (
-    get_session as get_db_session,
-    set_engine_uri,
     create_engine_uri,
     init_db,
+    set_engine_uri,
 )
-from .models import (
-    LocationType,
-    Location,
-    BaseUnit,
-    BaseUnitIdentity,
-    BaseUnitOnlineStatus,
-    PowerManagementSettings,
-    PowerManagementStatus,
-    BaseUnitStatus,
-    BaseUnitUsageStatus,
-    SensorReading,
+from .engine import (
+    get_session as get_db_session,
 )
 from .location_table import (
-    LOCATION_TABLE_TITLES,
     DEFAULT_LOCATION_TABLE_KEYS,
+    LOCATION_TABLE_TITLES,
     LocationTableKey,
     show_locations_table,
 )
+from .models import (
+    BaseUnit,
+    BaseUnitIdentity,
+    BaseUnitOnlineStatus,
+    BaseUnitStatus,
+    BaseUnitUsageStatus,
+    Location,
+    LocationType,
+    PowerManagementSettings,
+    PowerManagementStatus,
+    SensorReading,
+)
+from .serialization import deserialize_database, serialize_database
 from .utils import get_count_for_select
-from .serialization import serialize_database, deserialize_database
-from ..temperature_history import TemperatureHistory
-from ..utils import click_secho, get_baseunit_from_filename, is_valid_ip_or_hostname
-from ..click_extra_params import get_extra_params, CLIRootContext
-from .. import timezone
 
 
 class CommunicationError(UserWarning):
@@ -171,28 +177,24 @@ def cli(ctx: click.Context, db_url: str|None) -> None:
 @click_extra.pass_context
 def baseunit_cli(ctx: click.Context) -> None:
     """CLI for managing BaseUnits in the database"""
-    pass
 
 
 @cli.group(name="manage")
 @click_extra.pass_context
 def manage_cli(ctx: click.Context) -> None:
     """CLI for managing the database (e.g. initializing, resetting, etc.)"""
-    pass
 
 
 @cli.group(name="update")
 @click_extra.pass_context
 def update_cli(ctx: click.Context) -> None:
     """CLI for updating information in the database by fetching data from the BaseUnits"""
-    pass
 
 
 @cli.group(name="location")
 @click_extra.pass_context
 def location_cli(ctx: click.Context) -> None:
     """CLI for managing Locations in the database"""
-    pass
 
 
 
@@ -255,7 +257,7 @@ def add_baseunit(ctx_obj: CLIDbContext, base_unit_ips: tuple[str, ...]) -> None:
                         **request_options,
                     )
                     infos.append(info)
-                except (asyncio.TimeoutError, ClientError) as e:
+                except (TimeoutError, ClientError) as e:
                     warnings.warn(
                         f"Connection to BaseUnit at IP '{base_unit_ip}' failed: {e}, skipping",
                         CommunicationError,
@@ -333,7 +335,7 @@ def list_baseunits(ctx: click_extra.Context, ctx_obj: CLIDbContext) -> None:
                 base_unit.ip_address,
                 base_unit.location.path if base_unit.location else "None",
             ))
-    ctx.print_table(data, header) # type: ignore[attr-defined]
+    ctx.print_table(data, header)
 
 
 
@@ -655,7 +657,7 @@ def update_baseunit_info(ctx_obj: CLIDbContext) -> None:
                 f"Updated information for BaseUnit '{base_unit.hostname}'",
                 fg="green",
             )
-        except (asyncio.TimeoutError, ClientError) as e:
+        except (TimeoutError, ClientError) as e:
             warnings.warn(
                 f"Connection to BaseUnit at IP '{base_unit.ip_address}' failed: {e}, skipping",
                 CommunicationError,
@@ -726,7 +728,7 @@ def update_power_management_info(ctx_obj: CLIDbContext) -> None:
                 fg="green",
             )
             return True
-        except (asyncio.TimeoutError, ClientError) as e:
+        except (TimeoutError, ClientError) as e:
             warnings.warn(
                 f"Connection to BaseUnit at IP '{base_unit.ip_address}' failed: {e}, skipping",
                 CommunicationError,
@@ -840,7 +842,7 @@ async def update_baseunit_status[T: BaseUnitStatus|BaseUnitUsageStatus](
         status = model_cls.from_data(base_unit, status_data)
         session.add(status)
         return status
-    except (asyncio.TimeoutError, ClientError) as e:
+    except (TimeoutError, ClientError) as e:
         warnings.warn(
             f"Connection to BaseUnit at IP '{base_unit.ip_address}' failed: {e}, skipping",
             CommunicationError,
@@ -924,7 +926,7 @@ def fetch_readings_bulk(
         baseunit_ips = []
         with baseunit_ip_file.open() as f:
             for line in f:
-                if line.startswith("#") or line.startswith("//"):
+                if line.startswith(("#", "//")):
                     continue
                 base_unit_ip = line.strip()
                 if base_unit_ip:
@@ -956,7 +958,7 @@ def fetch_readings_bulk(
                             f"BaseUnit '{base_unit.hostname}' has invalid IP address '{base_unit.ip_address}', skipping",
                             fg="red",
                         )
-                        return None
+                        return
                     try:
                         await base_unit.add_sensor_readings_from_api(
                             auth_info=ctx_obj.auth_info,
@@ -969,7 +971,7 @@ def fetch_readings_bulk(
                             f"Finished processing BaseUnit '{base_unit.hostname}' (ID: {base_unit.id})",
                             fg="blue",
                         )
-                    except (asyncio.TimeoutError, ClientError) as e:
+                    except (TimeoutError, ClientError) as e:
                         warnings.warn(
                             f"Connection to BaseUnit '{base_unit.hostname}' failed: {e}, skipping",
                             CommunicationError,
@@ -1014,10 +1016,10 @@ def backfill_influx(
 ) -> None:
     """Backfill all existing statuses in the database to InfluxDB."""
     from ..influxdb import (
-        upload_baseunit_status,
         backfill_readings,
-        upload_power_management_statuses,
         upload_baseunit_online_statuses,
+        upload_baseunit_status,
+        upload_power_management_statuses,
     )
 
     def iter_select_chunks[T](select: Select[tuple[T]], chunk_size: int) -> Iterator[Select[tuple[T]]]:
@@ -1038,7 +1040,7 @@ def backfill_influx(
         if max_days is not None:
             max_backfill_window = datetime.timedelta(days=max_days)
             return now - max_backfill_window
-        return datetime.datetime.min.replace(tzinfo=datetime.timezone.utc)
+        return datetime.datetime.min.replace(tzinfo=datetime.UTC)
 
 
     def get_extra_tags_for_baseunit(base_unit: BaseUnit, session: Session) -> dict[str, str]:
