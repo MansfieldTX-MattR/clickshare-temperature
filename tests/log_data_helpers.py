@@ -1,13 +1,12 @@
 from __future__ import annotations
-from typing import NamedTuple
-from pathlib import Path
+
 import datetime
+from pathlib import Path
+from typing import NamedTuple
 
 from clickshare_temperature.log_archive import LogEntry
 from clickshare_temperature.temperature_history import SensorReading
 from clickshare_temperature.types import SensorType
-
-
 
 DATA_ROOT = Path(__file__).parent / "data"
 LOG_ARCHIVE_FILE = DATA_ROOT / "logs" / "archive.tar.gz"

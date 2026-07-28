@@ -1,25 +1,14 @@
 from __future__ import annotations
-from typing import Sequence, NamedTuple
+
 import datetime
-from pathlib import Path
 import tempfile
+from collections.abc import Sequence
+from pathlib import Path
+from typing import NamedTuple
 
 import pytest
 from pytest_httpserver import HTTPServer
 
-
-from clickshare_temperature.types import (
-    BaseUnitInfo,
-    BaseUnitStatus,
-    BaseUnitUsageStatus,
-    PowerManagementInfo,
-    PowerModeStatus,
-    SensorType,
-)
-from clickshare_temperature.temperature_history import (
-    TemperatureHistory,
-    SensorReading,
-)
 from clickshare_temperature.influxdb import (
     InfluxDBClient3Wrapper,
     Point,
@@ -27,6 +16,18 @@ from clickshare_temperature.influxdb import (
     upload_baseunit_online_statuses,
     upload_baseunit_status,
     upload_power_management_statuses,
+)
+from clickshare_temperature.temperature_history import (
+    SensorReading,
+    TemperatureHistory,
+)
+from clickshare_temperature.types import (
+    BaseUnitInfo,
+    BaseUnitStatus,
+    BaseUnitUsageStatus,
+    PowerManagementInfo,
+    PowerModeStatus,
+    SensorType,
 )
 
 type WithTimeStamp[T] = tuple[T, datetime.datetime]
@@ -75,7 +76,7 @@ def baseunit_online_statuses() -> list[BaseUnitOnlineStatus]:
             ip_address="192.168.1.102",
         )
     ]
-    start_dt = datetime.datetime(2024, 1, 1, 12, 0, tzinfo=datetime.timezone.utc)
+    start_dt = datetime.datetime(2024, 1, 1, 12, 0, tzinfo=datetime.UTC)
     return [
         BaseUnitOnlineStatus(
             base_unit=base_units[i % 2],
@@ -145,7 +146,7 @@ def check_usage_status_points(
     if extra_tags is not None:
         assert len(extra_tags) == len(statuses_with_timestamps)
     else:
-        extra_tags = [dict() for _ in statuses_with_timestamps]
+        extra_tags = [{} for _ in statuses_with_timestamps]
     for point, (status, timestamp), tags in zip(points, statuses_with_timestamps, extra_tags):
         assert point.get_time() == timestamp
         expected_tags = {
@@ -174,7 +175,7 @@ def check_sensor_reading_points(
     if extra_tags is not None:
         assert len(extra_tags) == len(readings)
     else:
-        extra_tags = [dict() for _ in readings]
+        extra_tags = [{} for _ in readings]
     for point, reading, tags in zip(points, readings, extra_tags):
         assert point.get_time() == reading.timestamp
         expected_tags = {
@@ -204,7 +205,7 @@ def check_power_management_points(
     if extra_tags is not None:
         assert len(extra_tags) == len(statuses_with_timestamps)
     else:
-        extra_tags = [dict() for _ in statuses_with_timestamps]
+        extra_tags = [{} for _ in statuses_with_timestamps]
     for point, (power_info, timestamp), tags in zip(points, statuses_with_timestamps, extra_tags):
         assert point.get_time() == timestamp
         expected_tags = {
@@ -231,7 +232,7 @@ def check_online_status_points(
     if extra_tags is not None:
         assert len(extra_tags) == len(statuses_with_timestamps)
     else:
-        extra_tags = [dict() for _ in statuses_with_timestamps]
+        extra_tags = [{} for _ in statuses_with_timestamps]
     for point, status, tags in zip(points, statuses_with_timestamps, extra_tags):
         assert point.get_time() == status.timestamp
         expected_tags = {
