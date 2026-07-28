@@ -1,13 +1,14 @@
 from __future__ import annotations
-import warnings
+
 import subprocess
 import sys
+import warnings
 
 import pytest
 
 from clickshare_temperature.orm.cli import (
-    CommunicationError,
     COMMUNICATION_ERROR_EXIT_CODE,
+    CommunicationError,
     catch_communication_errors,
     raise_communication_errors,
 )
@@ -45,5 +46,7 @@ def func() -> str:
 if __name__ == "__main__":
     raise_communication_errors(func)
 """
-    result = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True)
+    result = subprocess.run(
+        [sys.executable, "-c", script], capture_output=True, text=True, check=False
+    )
     assert result.returncode == COMMUNICATION_ERROR_EXIT_CODE

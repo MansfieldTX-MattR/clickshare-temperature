@@ -1,25 +1,25 @@
-import pytest
-from typing import Sequence, Iterator, Literal, overload
+from collections.abc import Iterator, Sequence
 from pathlib import Path
+from typing import Literal, overload
 
-
-from sqlalchemy import select, delete
-from sqlalchemy.orm import Session
-from sqlalchemy.exc import IntegrityError, NoResultFound
+import pytest
 from click_extra.testing import CliRunner
+from sqlalchemy import delete, select
+from sqlalchemy.exc import IntegrityError, NoResultFound
+from sqlalchemy.orm import Session
 
 from clickshare_temperature.orm import (
-    set_engine_uri,
     get_engine_uri,
-    init_db,
     get_session,
-)
-from clickshare_temperature.orm import models
-from clickshare_temperature.orm.serialization import (
-    serialize_database,
-    deserialize_database,
+    init_db,
+    models,
+    set_engine_uri,
 )
 from clickshare_temperature.orm.cli import list_locations
+from clickshare_temperature.orm.serialization import (
+    deserialize_database,
+    serialize_database,
+)
 from clickshare_temperature.orm.types import LocationSiblingType
 from clickshare_temperature.orm.utils import get_count_for_select
 from clickshare_temperature.types import BaseUnitInfo
@@ -102,11 +102,9 @@ def _get_room_tuple_valid(*names: str) -> bool:
     room_name = names[2]
     is_lone_floor = (floor_name == "Floor with only one Child")
     is_lone_room = (room_name == "Lone Room")
-    if is_lone_floor and not is_lone_room:
-        return False
-    elif not is_lone_floor and is_lone_room:
-        return False
-    return True
+    return not (
+        is_lone_floor and not is_lone_room or not is_lone_floor and is_lone_room
+    )
 
 
 @overload
@@ -341,11 +339,10 @@ def test_location_type_model_uniqueness(
     db_session.add(location_type)
     db_session.commit()
 
-    with db_session.begin_nested():
-        with pytest.raises(IntegrityError):
-            duplicate_location_type = models.LocationType(name=location_type_name)
-            db_session.add(duplicate_location_type)
-            db_session.flush()
+    with pytest.raises(IntegrityError), db_session.begin_nested():
+        duplicate_location_type = models.LocationType(name=location_type_name)
+        db_session.add(duplicate_location_type)
+        db_session.flush()
 
 
 def test_location_model_types(
@@ -472,20 +469,18 @@ def test_location_model_hierarchy_uniqueness(
         assert location is not None
         parent = location.parent_location
         assert parent is not None
-        with db_session.begin_nested():
-            with pytest.raises(IntegrityError):
-                new_location = models.Location(name=location.name, parent_location=parent)
-                db_session.add(new_location)
-                db_session.flush()
+        with pytest.raises(IntegrityError), db_session.begin_nested():
+            new_location = models.Location(name=location.name, parent_location=parent)
+            db_session.add(new_location)
+            db_session.flush()
 
     # Attempt to create duplicate root locations with the same name,
     # which should also violate the unique constraint
     for root_name in location_root_names:
-        with db_session.begin_nested():
-            with pytest.raises(IntegrityError):
-                new_location = models.Location(name=root_name, parent_location=None)
-                db_session.add(new_location)
-                db_session.flush()
+        with pytest.raises(IntegrityError), db_session.begin_nested():
+            new_location = models.Location(name=root_name, parent_location=None)
+            db_session.add(new_location)
+            db_session.flush()
 
 
 def test_location_model_ancestors_query(
@@ -618,9 +613,7 @@ def test_location_model_baseunit_assignment(
         """Get the BaseUnits assigned to the given location or any of its descendants"""
         result = set[models.BaseUnit]()
         for base_units, loc in base_unit_for_location_model.values():
-            if loc == location:
-                result.update(base_units)
-            elif loc.pathlist[:len(location.pathlist)] == location.pathlist:
+            if loc == location or loc.pathlist[:len(location.pathlist)] == location.pathlist:
                 result.update(base_units)
         return result
 

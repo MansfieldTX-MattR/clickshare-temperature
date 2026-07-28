@@ -1,9 +1,9 @@
 from __future__ import annotations
-from pathlib import Path
+
 import gzip
 import tarfile
 import tempfile
-
+from pathlib import Path
 
 HERE = Path(__file__).parent
 LOG_PARENT_DIR = HERE / "rotated"

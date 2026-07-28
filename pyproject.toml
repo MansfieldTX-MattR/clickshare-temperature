@@ -43,7 +43,7 @@ module = "influxdb_client_3.*"
 ignore_errors = true
 
 [tool.ruff]
-include = ["pyproject.toml", "src/**/*.py"]
+include = ["pyproject.toml", "src/**/*.py", "tests/**/*.py"]
 
 [tool.pytest]
 testpaths = ["tests"]

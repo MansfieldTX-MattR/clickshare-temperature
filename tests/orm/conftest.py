@@ -1,11 +1,9 @@
-from typing import Iterator
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
-from sqlalchemy.orm import (
-    Session as ORMSession,
-    close_all_sessions as sa_close_all_sessions
-)
+from sqlalchemy.orm import Session as ORMSession
+from sqlalchemy.orm import close_all_sessions as sa_close_all_sessions
 
 from clickshare_temperature import orm
 

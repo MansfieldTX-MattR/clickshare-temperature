@@ -1,9 +1,11 @@
 from __future__ import annotations
-import pytest
-from typing import Iterator, TYPE_CHECKING
-import datetime
-from pathlib import Path
 
+import datetime
+from collections.abc import Iterator
+from pathlib import Path
+from typing import TYPE_CHECKING
+
+import pytest
 
 if TYPE_CHECKING:
     from pytest_codspeed import BenchmarkFixture
@@ -11,33 +13,30 @@ if TYPE_CHECKING:
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-
-from clickshare_temperature.types import SensorType, BaseUnitInfo
-from clickshare_temperature.temperature_history import (
-    SensorReading as SensorReadingData
-)
 from clickshare_temperature.orm import (
-    set_engine_uri,
     get_engine_uri,
-    init_db,
     get_session,
+    init_db,
+    models,
+    set_engine_uri,
 )
-from clickshare_temperature.orm import models
-from clickshare_temperature.orm.utils import get_count_for_select
 from clickshare_temperature.orm.serialization import (
-    serialize_database,
     deserialize_database,
+    serialize_database,
 )
-
+from clickshare_temperature.orm.utils import get_count_for_select
+from clickshare_temperature.temperature_history import (
+    SensorReading as SensorReadingData,
+)
+from clickshare_temperature.types import BaseUnitInfo, SensorType
 
 from .conftest import _reset_engine
-
 
 
 def generate_sensor_readings(
     num_readings: int,
     *sensor_types: SensorType,
-    start_time: datetime.datetime = datetime.datetime(2024, 1, 1, 0, 0, 0, tzinfo=datetime.timezone.utc),
+    start_time: datetime.datetime = datetime.datetime(2024, 1, 1, 0, 0, 0, tzinfo=datetime.UTC),
     interval: datetime.timedelta = datetime.timedelta(minutes=1),
 ) -> Iterator[SensorReadingData]:
     """Generate a series of sensor readings for a given base unit and sensor types
@@ -121,7 +120,7 @@ def populated_db_session(
         base_unit = models.BaseUnit.from_info(base_unit_info)
         db_session.add(base_unit)
         db_session.flush()  # Ensure base_unit gets an ID before adding readings
-        for sensor_type, sensor_readings_list in readings.items():
+        for sensor_readings_list in readings.values():
             for reading in sensor_readings_list:
                 reading_model = models.SensorReading.from_data(
                     base_unit=base_unit,
@@ -332,7 +331,7 @@ def test_orm_deserialization_half_populated(
             session=current_db_session,
         )
         num_removed = 0
-        for base_unit_info, _ in sensor_readings.items():
+        for base_unit_info in sensor_readings:
             base_unit = current_db_session.execute(select(models.BaseUnit).where(
                 models.BaseUnit.hostname == base_unit_info.hostname,
             )).scalar_one()

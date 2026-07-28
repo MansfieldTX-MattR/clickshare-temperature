@@ -1,31 +1,33 @@
 from __future__ import annotations
-from typing import Iterator, TYPE_CHECKING
+
 import datetime
-from zoneinfo import ZoneInfo
+from collections.abc import Iterator
 from pathlib import Path
+from typing import TYPE_CHECKING
+from zoneinfo import ZoneInfo
 
 import pytest
+
 if TYPE_CHECKING:
     from pytest_httpserver import HTTPServer
 
+import clickshare_temperature.influxdb
+from clickshare_temperature.temperature_history import SensorReading, TemperatureHistory
 from clickshare_temperature.types import (
-    BaseUnitInfo,
     BaseUnitIdentity,
+    BaseUnitInfo,
     BaseUnitStatus,
     BaseUnitUsageStatus,
     PowerManagementInfo,
 )
-from clickshare_temperature.temperature_history import TemperatureHistory, SensorReading
 
 from .log_data_helpers import (
-    LOG_ARCHIVE_FILE,
     LOG_ARCHIVE_EXPECTED_FILES,
-    LOG_ENTRY_TEST_CASES,
+    LOG_ARCHIVE_FILE,
     LOG_ENTRY_SENSOR_READINGS,
+    LOG_ENTRY_TEST_CASES,
     LogEntryTestCase,
 )
-import clickshare_temperature.influxdb
-
 
 type WithTimeStamp[T] = tuple[T, datetime.datetime]
 
@@ -109,7 +111,7 @@ def log_archive_file() -> Path:
 @pytest.fixture(
     params=[
         # ZoneInfo("UTC"),
-        datetime.timezone.utc,
+        datetime.UTC,
         ZoneInfo("US/Eastern"),
         ZoneInfo("US/Central"),
         ZoneInfo("US/Mountain"),

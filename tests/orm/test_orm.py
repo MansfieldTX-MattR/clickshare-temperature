@@ -1,37 +1,54 @@
-import pytest
-from typing import Callable, NamedTuple
 import datetime
-from pathlib import Path
 import json
+from collections.abc import Callable
+from pathlib import Path
+from typing import NamedTuple
 
+import pytest
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError, NoResultFound, OperationalError
 from sqlalchemy.orm import Session
-from sqlalchemy.exc import OperationalError, IntegrityError, NoResultFound
 
 from clickshare_temperature.orm import (
-    set_engine_uri,
-    get_engine_uri,
-    init_db,
-    get_session,
     BaseUnit as BaseUnitModel,
+)
+from clickshare_temperature.orm import (
     BaseUnitIdentity as BaseUnitIdentityModel,
+)
+from clickshare_temperature.orm import (
     BaseUnitOnlineStatus as BaseUnitOnlineStatusModel,
-    PowerManagementSettings as PowerManagementSettingsModel,
-    PowerManagementStatus as PowerManagementStatusModel,
+)
+from clickshare_temperature.orm import (
     BaseUnitStatus as BaseUnitStatusModel,
+)
+from clickshare_temperature.orm import (
     BaseUnitUsageStatus as BaseUnitUsageStatusModel,
+)
+from clickshare_temperature.orm import (
+    PowerManagementSettings as PowerManagementSettingsModel,
+)
+from clickshare_temperature.orm import (
+    PowerManagementStatus as PowerManagementStatusModel,
+)
+from clickshare_temperature.orm import (
     SensorReading as SensorReadingModel,
 )
+from clickshare_temperature.orm import (
+    get_engine_uri,
+    get_session,
+    init_db,
+    set_engine_uri,
+)
+from clickshare_temperature.orm.cli import get_online_statuses_for_influx_backfill
 from clickshare_temperature.orm.serialization import (
     SERIALIZATION_VERSION,
     SerializationFormatV0,
     SerializationFormatV1,
-    serialize_database,
     deserialize_database,
+    serialize_database,
 )
 from clickshare_temperature.orm.utils import get_count_for_select
-from clickshare_temperature.orm.cli import get_online_statuses_for_influx_backfill
-from clickshare_temperature.temperature_history import TemperatureHistory, SensorReading
+from clickshare_temperature.temperature_history import SensorReading, TemperatureHistory
 from clickshare_temperature.types import (
     BaseUnitIdentity,
     BaseUnitInfo,
@@ -236,9 +253,8 @@ def _populate_db_with_data(
 
 
 def test_db_is_uninitialized(uninitialized_db):
-    with pytest.raises(OperationalError):
-        with get_session() as session:
-            _ = session.execute(select(BaseUnitModel)).scalars().first()
+    with pytest.raises(OperationalError), get_session() as session:
+        _ = session.execute(select(BaseUnitModel)).scalars().first()
 
 
 def test_get_scalars_all(
@@ -321,7 +337,7 @@ def test_base_unit_status_model_unique_constraints(
 
     assert base_unit.id is not None
 
-    status_timestamp = datetime.datetime(2024, 1, 1, tzinfo=datetime.timezone.utc)
+    status_timestamp = datetime.datetime(2024, 1, 1, tzinfo=datetime.UTC)
 
     status = BaseUnitStatusModel(
         base_unit_id=base_unit.id,
@@ -369,7 +385,7 @@ def test_sensor_reading_unique_constraints(db_session: Session, sample_base_unit
 
 
     reading_data = SensorReading[SensorType](
-        timestamp=datetime.datetime(2024, 1, 1, 12, 0, 0, tzinfo=datetime.timezone.utc),
+        timestamp=datetime.datetime(2024, 1, 1, 12, 0, 0, tzinfo=datetime.UTC),
         sensor="CPU",
         value=50.0,
     )
@@ -386,7 +402,7 @@ def test_sensor_reading_unique_constraints(db_session: Session, sample_base_unit
     # Attempt to add another SensorReading with the same base_unit_id, timestamp, and sensor
     duplicate_reading = SensorReadingModel(
         base_unit_id=base_unit.id,
-        timestamp=datetime.datetime(2024, 1, 1, 12, 0, 0, tzinfo=datetime.timezone.utc),
+        timestamp=datetime.datetime(2024, 1, 1, 12, 0, 0, tzinfo=datetime.UTC),
         sensor_type="CPU",
         value=55.0,
     )
@@ -545,7 +561,7 @@ def test_get_online_statuses_for_influx_backfill_selection(
        missing or outside the configured time window.
 
     """
-    now = datetime.datetime(2024, 1, 1, 12, 0, tzinfo=datetime.timezone.utc)
+    now = datetime.datetime(2024, 1, 1, 12, 0, tzinfo=datetime.UTC)
     window = datetime.timedelta(hours=1)
 
     base_unit_a = base_unit_factory("a")

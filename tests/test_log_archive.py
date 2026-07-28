@@ -1,8 +1,9 @@
 from __future__ import annotations
-from typing import TYPE_CHECKING
-from pathlib import Path
 
-from clickshare_temperature.log_archive import LogEntry, LogArchive
+from pathlib import Path
+from typing import TYPE_CHECKING
+
+from clickshare_temperature.log_archive import LogArchive, LogEntry
 from clickshare_temperature.temperature_history import (
     SensorReading,
     TemperatureHistory,
