@@ -339,7 +339,7 @@ def test_location_type_model_uniqueness(
     db_session.add(location_type)
     db_session.commit()
 
-    with db_session.begin_nested(), pytest.raises(IntegrityError):
+    with pytest.raises(IntegrityError), db_session.begin_nested():
         duplicate_location_type = models.LocationType(name=location_type_name)
         db_session.add(duplicate_location_type)
         db_session.flush()
@@ -469,7 +469,7 @@ def test_location_model_hierarchy_uniqueness(
         assert location is not None
         parent = location.parent_location
         assert parent is not None
-        with db_session.begin_nested(), pytest.raises(IntegrityError):
+        with pytest.raises(IntegrityError), db_session.begin_nested():
             new_location = models.Location(name=location.name, parent_location=parent)
             db_session.add(new_location)
             db_session.flush()
@@ -477,7 +477,7 @@ def test_location_model_hierarchy_uniqueness(
     # Attempt to create duplicate root locations with the same name,
     # which should also violate the unique constraint
     for root_name in location_root_names:
-        with db_session.begin_nested(), pytest.raises(IntegrityError):
+        with pytest.raises(IntegrityError), db_session.begin_nested():
             new_location = models.Location(name=root_name, parent_location=None)
             db_session.add(new_location)
             db_session.flush()
