@@ -18,7 +18,9 @@ import click
 from dotenv import load_dotenv
 from influxdb_client_3 import InfluxDBClient3, WritePrecision
 from influxdb_client_3 import Point as _Point
-from influxdb_client_3.write_client.rest import ApiException as InfluxDBApiException
+from influxdb_client_3.write_client.write_exceptions import (
+    ApiException as InfluxDBApiException,
+)
 from urllib3 import HTTPHeaderDict
 
 from .temperature_history import SensorReading, TemperatureHistory
@@ -93,7 +95,9 @@ class InfluxDBClient3Wrapper:
 
     """
     def __init__(self) -> None:
-        self.client = InfluxDBClient3(host=INFLUX_URL, token=INFLUX_TOKEN, org=INFLUX_ORG)
+        self.client = InfluxDBClient3(
+            host=INFLUX_URL, token=INFLUX_TOKEN, org=INFLUX_ORG, database=INFLUX_BUCKET,
+        )
         self._acquire_count = 0
         self._is_closed = False
 

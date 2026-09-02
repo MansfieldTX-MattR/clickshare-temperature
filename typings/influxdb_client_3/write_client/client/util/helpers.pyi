@@ -1,3 +1,3 @@
-from influxdb_client_3.write_client.rest import ApiException as ApiException
+from influxdb_client_3.write_client.write_exceptions import ApiException as ApiException
 
 def get_org_query_param(org, client, required_id: bool = False): ...

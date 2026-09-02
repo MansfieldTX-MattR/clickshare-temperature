@@ -1,6 +1,7 @@
 import pandas as pd
 import polars as pl
 import types
+from _typeshed import Incomplete
 from influxdb_client_3.write_client import Point as Point, WriteOptions as WriteOptions
 from influxdb_client_3.write_client.client.write_api import ASYNCHRONOUS as ASYNCHRONOUS, PointSettings as PointSettings, SYNCHRONOUS as SYNCHRONOUS
 from influxdb_client_3.write_client.domain.write_precision import WritePrecision as WritePrecision
@@ -13,7 +14,11 @@ def flight_client_options(**kwargs): ...
 def file_parser_options(**kwargs): ...
 
 class InfluxDBClient3:
-    def __init__(self, host: str|None=None, org: str|None=None, database: str|None=None, token: str|None=None, write_client_options: dict[str, Any]|None=None, flight_client_options: dict[str, Any]|None=None, write_port_overwrite: int|None=None, query_port_overwrite: int|None=None, disable_grpc_compression: bool = False, **kwargs) -> None: ...
+    base_url: Incomplete
+    default_header: Incomplete
+    rest_client: Incomplete
+
+    def __init__(self, host: str|None = None, org: str|None = None, database: str|None = None, token: str|None = None, auth_scheme: object|None = None, enable_gzip: bool = False, gzip_threshold: int|None = None, write_client_options: dict[str, Any]|None = None, flight_client_options: dict[str, Any]|None = None, write_port_overwrite: int|None = None, query_port_overwrite: int|None = None, disable_grpc_compression: bool = False, point_settings: PointSettings|None = None, debug: bool = False, **kwargs) -> None: ...
     @classmethod
     def from_env(cls, **kwargs: Any) -> InfluxDBClient3: ...
     def write(self, record: Iterable[Point]|None=None, database: str|None=None, **kwargs): ...

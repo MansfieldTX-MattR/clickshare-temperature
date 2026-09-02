@@ -1,1 +1,1 @@
-from .exceptions import InfluxDB3ClientError as InfluxDB3ClientError, InfluxDB3ClientQueryError as InfluxDB3ClientQueryError, InfluxDBError as InfluxDBError
+from .exceptions import InfluxDB3ClientError as InfluxDB3ClientError, InfluxDB3ClientQueryError as InfluxDB3ClientQueryError, InfluxDBError as InfluxDBError, InfluxDBPartialWriteError as InfluxDBPartialWriteError, InfluxDBPartialWriteLineError as InfluxDBPartialWriteLineError
