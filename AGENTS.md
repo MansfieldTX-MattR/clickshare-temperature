@@ -93,6 +93,14 @@ uv run pytest
 ```
 
 
+## Typing and Code Analysis Exceptions
+
+In this repository, `typings/influxdb_client_3` contains `stubgen`-generated stubs for an incompletely typed vendor library.
+Review incomplete or inaccurate declarations in this directory only when code in this project
+(in `src/clickshare_temperature` and `tests`, etc.) directly uses the affected module or symbol.
+
+The intentional local corrections are in commits `140a222`, `65e123e`, and `a126a58`.
+
 ## Typing Preferences
 
 - Use strict typing as much as possible.
