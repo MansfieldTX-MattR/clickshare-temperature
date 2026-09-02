@@ -95,7 +95,9 @@ class InfluxDBClient3Wrapper:
 
     """
     def __init__(self) -> None:
-        self.client = InfluxDBClient3(host=INFLUX_URL, token=INFLUX_TOKEN, org=INFLUX_ORG)
+        self.client = InfluxDBClient3(
+            host=INFLUX_URL, token=INFLUX_TOKEN, org=INFLUX_ORG, database=INFLUX_BUCKET,
+        )
         self._acquire_count = 0
         self._is_closed = False
 
